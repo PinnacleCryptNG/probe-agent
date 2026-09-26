@@ -14,6 +14,7 @@ import { InvestigationTurnRequest, InvestigationTurnResult } from './types.js';
 import { detectChallenge } from '../challenge/detector.js';
 import { ChallengeSynthesizer } from '../challenge/synthesizer.js';
 import { formatChallengeResult } from '../challenge/formatter.js';
+import { profiler } from '../../utils/profiler.js';
 
 export interface InvestigationOrchestratorDependencies {
   planner: InvestigationPlanner;
@@ -249,7 +250,13 @@ export class InvestigationOrchestrator {
 
     let plan: InvestigationPlan;
     try {
+      const tPlanStart = Date.now();
       plan = await this.planner.plan(plannerContext, trimmedQuestion);
+      const tPlanEnd = Date.now();
+      profiler.recordStage('3. Investigation planning', tPlanStart, tPlanEnd, {
+        intent: plan.intent,
+        selectedCapabilities: plan.selectedCapabilities,
+      });
     } catch (plannerErr) {
       const errMsg = plannerErr instanceof Error ? plannerErr.message : String(plannerErr);
       logger.error('Planner execution failed', {
@@ -328,6 +335,8 @@ export class InvestigationOrchestrator {
       // Transition if allowed
     }
 
+    await request.onProgress?.('token_identified');
+
     const executableReqs = this.planner.toExecutableRequirements(plan);
     const execContext: ExecutionContext = {
       investigationId: currentInv.id,
@@ -340,6 +349,7 @@ export class InvestigationOrchestrator {
     let executionResults: ExecutionResult[];
     try {
       executionResults = await this.executor.executeMany(executableReqs, execContext);
+      await request.onProgress?.('activity_analyzed');
     } catch (execErr) {
       const errMsg = execErr instanceof Error ? execErr.message : String(execErr);
       logger.error('Evidence execution unexpected failure', {
@@ -399,6 +409,7 @@ export class InvestigationOrchestrator {
       });
 
       // Synthesize empty evidence to produce grounded unknown response
+      await request.onProgress?.('building_report');
       const emptySynthesis = await this.synthesizer.synthesize({
         question: trimmedQuestion,
         investigationId: currentInv.id,
@@ -466,6 +477,7 @@ export class InvestigationOrchestrator {
 
     let synthesis: SynthesisResult;
     try {
+      await request.onProgress?.('building_report');
       synthesis = await this.synthesizer.synthesize(synthesisRequest);
     } catch (synthErr) {
       const errMsg = synthErr instanceof Error ? synthErr.message : String(synthErr);

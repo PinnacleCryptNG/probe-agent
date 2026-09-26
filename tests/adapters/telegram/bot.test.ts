@@ -111,6 +111,14 @@ describe('Telegram Adapter Integration (Phase 3A)', () => {
         answeredCallbacks.push(p.callback_query_id);
         return { ok: true, result: true } as never;
       }
+      if (method === 'editMessageText') {
+        const p = payload as { chat_id: number | string; message_id: number; text: string };
+        const msg = sentMessages[p.message_id - 1];
+        if (msg) {
+          msg.text = p.text;
+        }
+        return { ok: true, result: true } as never;
+      }
       return { ok: true, result: {} } as never;
     });
   });
@@ -1000,6 +1008,14 @@ describe('Investigation UX Simplification & Grounded Evidence Tests', () => {
         answeredCallbacks.push(p.callback_query_id);
         return { ok: true, result: true } as never;
       }
+      if (method === 'editMessageText') {
+        const p = payload as { chat_id: number | string; message_id: number; text: string };
+        const msg = sentMessages[p.message_id - 1];
+        if (msg) {
+          msg.text = p.text;
+        }
+        return { ok: true, result: true } as never;
+      }
       return { ok: true, result: {} } as never;
     });
   });
@@ -1071,7 +1087,17 @@ describe('Investigation UX Simplification & Grounded Evidence Tests', () => {
       chat: { id: 777 },
       from: { id: 777 },
       reply: async (text: string) => {
+        const msgId = sentMessages.length + 1;
         sentMessages.push({ chatId: 777, text });
+        return { message_id: msgId, chat: { id: 777 }, text };
+      },
+      api: {
+        editMessageText: async (_chatId: number | string, messageId: number, text: string) => {
+          if (sentMessages[messageId - 1]) {
+            sentMessages[messageId - 1].text = text;
+          }
+          return { ok: true, result: true };
+        },
       },
     } as any;
 
@@ -1105,7 +1131,17 @@ describe('Investigation UX Simplification & Grounded Evidence Tests', () => {
       chat: { id: 777 },
       from: { id: 777 },
       reply: async (text: string) => {
+        const msgId = sentMessages.length + 1;
         sentMessages.push({ chatId: 777, text });
+        return { message_id: msgId, chat: { id: 777 }, text };
+      },
+      api: {
+        editMessageText: async (_chatId: number | string, messageId: number, text: string) => {
+          if (sentMessages[messageId - 1]) {
+            sentMessages[messageId - 1].text = text;
+          }
+          return { ok: true, result: true };
+        },
       },
     } as any;
 
@@ -1135,7 +1171,17 @@ describe('Investigation UX Simplification & Grounded Evidence Tests', () => {
       chat: { id: 777 },
       from: { id: 777 },
       reply: async (text: string) => {
+        const msgId = sentMessages.length + 1;
         sentMessages.push({ chatId: 777, text });
+        return { message_id: msgId, chat: { id: 777 }, text };
+      },
+      api: {
+        editMessageText: async (_chatId: number | string, messageId: number, text: string) => {
+          if (sentMessages[messageId - 1]) {
+            sentMessages[messageId - 1].text = text;
+          }
+          return { ok: true, result: true };
+        },
       },
     } as any;
 
@@ -1164,7 +1210,17 @@ describe('Investigation UX Simplification & Grounded Evidence Tests', () => {
       chat: { id: 777 },
       from: { id: 777 },
       reply: async (text: string) => {
+        const msgId = sentMessages.length + 1;
         sentMessages.push({ chatId: 777, text });
+        return { message_id: msgId, chat: { id: 777 }, text };
+      },
+      api: {
+        editMessageText: async (_chatId: number | string, messageId: number, text: string) => {
+          if (sentMessages[messageId - 1]) {
+            sentMessages[messageId - 1].text = text;
+          }
+          return { ok: true, result: true };
+        },
       },
     } as any;
 
@@ -1236,7 +1292,17 @@ describe('Investigation UX Simplification & Grounded Evidence Tests', () => {
       chat: { id: 777 },
       from: { id: 777 },
       reply: async (text: string) => {
+        const msgId = sentMessages.length + 1;
         sentMessages.push({ chatId: 777, text });
+        return { message_id: msgId, chat: { id: 777 }, text };
+      },
+      api: {
+        editMessageText: async (_chatId: number | string, messageId: number, text: string) => {
+          if (sentMessages[messageId - 1]) {
+            sentMessages[messageId - 1].text = text;
+          }
+          return { ok: true, result: true };
+        },
       },
     } as any;
 

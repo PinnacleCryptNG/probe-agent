@@ -141,6 +141,15 @@ describe('Runtime Wiring Smoke Test (Phase 3B)', () => {
             },
           } as never;
         }
+        if (method === 'editMessageText') {
+          const p = payload as { text: string; chat_id: number; message_id: number };
+          if (replies[p.message_id - 1] !== undefined) {
+            replies[p.message_id - 1] = p.text;
+          } else {
+            replies.push(p.text);
+          }
+          return { ok: true, result: {} } as never;
+        }
         return { ok: true, result: {} } as never;
       });
 

@@ -12,6 +12,11 @@ export type InvestigationTurnStatus =
   | 'budget_limited'
   | 'failed';
 
+export type InvestigationProgressStage =
+  | 'token_identified'
+  | 'activity_analyzed'
+  | 'building_report';
+
 export interface InvestigationTurnRequest {
   investigationId?: string;
   chatId?: number | string;
@@ -21,6 +26,7 @@ export interface InvestigationTurnRequest {
   maxCallsAllowed?: number;
   remainingCredits?: number;
   targetWalletAddress?: string;
+  onProgress?: (stage: InvestigationProgressStage) => void | Promise<void>;
 }
 
 export interface InvestigationTurnResult {

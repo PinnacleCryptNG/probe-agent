@@ -8,6 +8,8 @@ import { TelegramKeyboards } from './keyboard.js';
 import { TelegramMessages } from './messages.js';
 import { detectChainOnlyInput, extractTokenCandidate, isOnlyTokenInput } from './token-extractor.js';
 import { ITokenResolver, defaultTokenResolver } from '../../core/token/resolver.js';
+import { profiler } from '../../utils/profiler.js';
+import { TelegramProgressTracker } from './progress.js';
 
 export interface TelegramBotDependencies {
   botToken: string;
@@ -97,6 +99,8 @@ export class ProbeTelegramBot {
 
   private registerMessageHandlers(): void {
     this.bot.on('message:text', async (ctx: Context) => {
+      profiler.startRequest();
+      (ctx as { _updateReceivedAt?: number })._updateReceivedAt = Date.now();
       const text = ctx.message?.text?.trim();
       if (!text || text.startsWith('/')) {
         return;
@@ -125,6 +129,9 @@ export class ProbeTelegramBot {
       queryLength: trimmed.length,
     });
 
+    const tReceived = (ctx as { _updateReceivedAt?: number })._updateReceivedAt ?? Date.now();
+    profiler.recordStage('1. Telegram update received', tReceived, Date.now());
+
     try {
       // 1. Check for chain-only input (Requirement 4)
       const chainName = detectChainOnlyInput(trimmed);
@@ -147,7 +154,13 @@ export class ProbeTelegramBot {
         }
 
         // Asynchronously resolve candidate via Nansen multi-strategy token resolution
+        const tTokenStart = Date.now();
         const resolution = await this.tokenResolver.resolveDetailed(tokenCandidate);
+        const tTokenEnd = Date.now();
+        profiler.recordStage('2. Token resolution', tTokenStart, tTokenEnd, {
+          status: resolution.status,
+          candidate: tokenCandidate.identifier,
+        });
 
         if (resolution.status === 'INVALID_ADDRESS') {
           await ctx.reply(TelegramMessages.unresolvedToken());
@@ -195,7 +208,14 @@ export class ProbeTelegramBot {
       let investigationId = activeInv?.id;
 
       if (tokenCandidate) {
+        const tTokenStart = Date.now();
         const resolved = await this.tokenResolver.resolve(tokenCandidate);
+        const tTokenEnd = Date.now();
+        profiler.recordStage('2. Token resolution', tTokenStart, tTokenEnd, {
+          candidate: tokenCandidate.identifier,
+          resolved: resolved?.symbol,
+        });
+
         if (
           resolved &&
           (!activeInv ||
@@ -212,6 +232,9 @@ export class ProbeTelegramBot {
           effectiveToken = resolved;
           investigationId = newInv.id;
         }
+      } else {
+        const now = Date.now();
+        profiler.recordStage('2. Token resolution', now, now, { cached: true, token: effectiveToken?.symbol });
       }
 
       if (!effectiveToken) {
@@ -220,25 +243,54 @@ export class ProbeTelegramBot {
         return;
       }
 
-      // 4. Delegate execution directly to InvestigationOrchestrator
-      const turnResult = await this.orchestrator.executeTurn({
-        investigationId,
+      // Initialize Telegram progress feedback tracker and send initial progress message immediately
+      const progressTracker = new TelegramProgressTracker({
         chatId,
-        question: trimmed,
-        token: effectiveToken,
-        userId,
+        tokenSymbol: effectiveToken.symbol,
+        ctx,
+        botApi: this.bot.api,
       });
+      await progressTracker.start();
 
-      // 5. Format response preserving epistemic structure
+      // 4. Delegate execution directly to InvestigationOrchestrator
+      let turnResult;
+      try {
+        turnResult = await this.orchestrator.executeTurn({
+          investigationId,
+          chatId,
+          question: trimmed,
+          token: effectiveToken,
+          userId,
+          onProgress: async (stage) => {
+            await progressTracker.updateStage(stage);
+          },
+        });
+      } catch (turnErr) {
+        const errMsg = turnErr instanceof Error ? turnErr.message : String(turnErr);
+        logger.error('Orchestrator turn execution failed unexpectedly', {
+          chatId,
+          error: errMsg,
+        });
+        await progressTracker.fail('⚠️ An unexpected issue occurred during the investigation. Please try again.');
+        return;
+      }
+
+      // 5. Format response preserving epistemic structure (Stage 8)
+      const tFormatStart = Date.now();
       const formattedResponse = formatInvestigationResult(turnResult);
 
       // 6. Split long messages safely at section/paragraph boundaries
       const maxLen = PROBE_CONSTANTS.TELEGRAM_MAX_MESSAGE_LENGTH - 96;
       const chunks = splitTelegramMessage(formattedResponse, maxLen);
+      const tFormatEnd = Date.now();
+      profiler.recordStage('8. Telegram response formatting', tFormatStart, tFormatEnd, { chunkCount: chunks.length });
 
-      for (const chunk of chunks) {
-        await ctx.reply(chunk);
-      }
+      // 7. Send Telegram messages / replace progress message (Stage 9)
+      const tSendStart = Date.now();
+      await progressTracker.finish(chunks);
+      const tSendEnd = Date.now();
+      profiler.recordStage('9. Telegram message send', tSendStart, tSendEnd, { chunkCount: chunks.length });
+      profiler.endRequest();
     } catch (err) {
       // Safe fallback that never leaks internal stack traces or API keys
       const errMsg = err instanceof Error ? err.message : String(err);

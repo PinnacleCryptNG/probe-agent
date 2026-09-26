@@ -1,5 +1,6 @@
 import { generateId } from '../../utils/ids.js';
 import { logger } from '../../utils/logger.js';
+import { compactNormalizedData } from '../synthesis/prompts.js';
 import { ILLMProvider, MockLLMProvider } from './interface.js';
 import {
   LLMChallengeRequest,
@@ -17,6 +18,80 @@ export interface GeminiProviderOptions {
   timeoutMs?: number;
 }
 
+export interface GeminiCallOptions {
+  expectJson?: boolean;
+  responseSchema?: Record<string, unknown>;
+  maxOutputTokens?: number;
+  thinkingLevel?: 'low' | 'minimal' | 'medium' | 'high';
+  temperature?: number;
+}
+
+export interface GeminiUsageMetadata {
+  promptTokenCount?: number;
+  candidatesTokenCount?: number;
+  thoughtsTokenCount?: number;
+  totalTokenCount?: number;
+}
+
+/**
+ * Native OpenAPI schema defining PROBE's structured synthesis response for Gemini.
+ * Enforced at the decoding level while preserving all observation, interpretation,
+ * category, and hypothesis fields required by PROBE's epistemic validator.
+ */
+export const SYNTHESIS_RESPONSE_SCHEMA: Record<string, unknown> = {
+  type: 'OBJECT',
+  properties: {
+    headline: {
+      type: 'STRING',
+      description: '1-2 sentence direct answer to the user question',
+    },
+    observations: {
+      type: 'ARRAY',
+      description: '3-5 key metric observations directly supported by retrieved evidence',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          claim: {
+            type: 'STRING',
+            description: 'Clean formatted metric observation citing verified figures',
+          },
+          evidenceId: {
+            type: 'STRING',
+            description: 'Exact evidenceId (e.g. evi_...) from retrieved evidence',
+          },
+        },
+        required: ['claim', 'evidenceId'],
+      },
+    },
+    interpretation: {
+      type: 'STRING',
+      description: 'One short paragraph explaining what the observations indicate, maintaining epistemic limits',
+    },
+    evidenceCategories: {
+      type: 'ARRAY',
+      description: 'Short list of 2-4 human-readable categories/references',
+      items: {
+        type: 'STRING',
+      },
+    },
+    hypotheses: {
+      type: 'ARRAY',
+      description: 'Optional forward-looking conditions or hypotheses requiring more evidence',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          statement: {
+            type: 'STRING',
+            description: 'Forward-looking condition or hypothesis',
+          },
+        },
+        required: ['statement'],
+      },
+    },
+  },
+  required: ['headline', 'observations', 'interpretation', 'evidenceCategories'],
+};
+
 /**
  * Production Gemini LLM Provider connecting PROBE's planning and synthesis
  * to Google Gemini models using native HTTP fetch without external SDK overhead.
@@ -28,6 +103,7 @@ export class GeminiLLMProvider implements ILLMProvider {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly fallbackProvider: MockLLMProvider;
+  private lastUsage?: GeminiUsageMetadata;
 
   constructor(options: GeminiProviderOptions = {}) {
     this.apiKey = options.apiKey || process.env.LLM_API_KEY || process.env.GEMINI_API_KEY || '';
@@ -35,6 +111,10 @@ export class GeminiLLMProvider implements ILLMProvider {
     this.baseUrl = options.baseUrl || 'https://generativelanguage.googleapis.com/v1beta';
     this.timeoutMs = options.timeoutMs ?? 30000;
     this.fallbackProvider = new MockLLMProvider();
+  }
+
+  public getLastUsage(): GeminiUsageMetadata | undefined {
+    return this.lastUsage;
   }
 
   public async planInvestigation(request: LLMPlanningRequest): Promise<LLMPlanningResponse> {
@@ -86,7 +166,11 @@ Respond ONLY with a valid JSON object matching this schema:
 }`;
 
     try {
-      const responseText = await this.callGemini(prompt, true);
+      const responseText = await this.callGemini(prompt, {
+        expectJson: true,
+        maxOutputTokens: 600,
+        thinkingLevel: 'low',
+      });
       const parsed = JSON.parse(responseText);
 
       if (parsed && Array.isArray(parsed.selectedCapabilities) && parsed.selectedCapabilities.length > 0) {
@@ -128,10 +212,13 @@ Respond ONLY with a valid JSON object matching this schema:
     }
 
     const evidenceSummary = request.evidence
-      .map(
-        (e) =>
-          `[${e.evidenceId}] (${e.provenance.capability}): ${e.title} — ${e.summary}\nNormalized Data: ${JSON.stringify(e.normalizedData)}`
-      )
+      .map((e) => {
+        const compactData = compactNormalizedData(
+          e.normalizedData as Record<string, unknown>,
+          e.provenance.capability
+        );
+        return `[${e.evidenceId}] (${e.provenance.capability}): ${e.title} — ${e.summary}\nEvidence Metrics: ${JSON.stringify(compactData)}`;
+      })
       .join('\n\n');
 
     const prompt = `You are the lead on-chain cryptocurrency forensics investigator for PROBE.
@@ -191,7 +278,12 @@ Respond ONLY with a valid JSON object matching this schema:
 }`;
 
     try {
-      const responseText = await this.callGemini(prompt, true);
+      const responseText = await this.callGemini(prompt, {
+        expectJson: true,
+        responseSchema: SYNTHESIS_RESPONSE_SCHEMA,
+        maxOutputTokens: 600,
+        thinkingLevel: 'low',
+      });
       const parsed = JSON.parse(responseText);
 
       if (parsed && (parsed.headline || parsed.conclusion || parsed.observations)) {
@@ -273,6 +365,14 @@ Respond ONLY with a valid JSON object matching this schema:
               }))
             : [],
           openQuestions: [`Ask another question about ${request.tokenContext.symbol}.`],
+          usage: this.lastUsage
+            ? {
+                promptTokens: this.lastUsage.promptTokenCount,
+                candidateTokens: this.lastUsage.candidatesTokenCount,
+                thoughtTokens: this.lastUsage.thoughtsTokenCount,
+                totalTokens: this.lastUsage.totalTokenCount,
+              }
+            : undefined,
         };
       }
     } catch (err) {
@@ -305,7 +405,11 @@ Respond ONLY with a valid JSON object matching:
 }`;
 
     try {
-      const responseText = await this.callGemini(prompt, true);
+      const responseText = await this.callGemini(prompt, {
+        expectJson: true,
+        maxOutputTokens: 600,
+        thinkingLevel: 'low',
+      });
       const parsed = JSON.parse(responseText);
 
       return {
@@ -319,11 +423,29 @@ Respond ONLY with a valid JSON object matching:
     }
   }
 
-  private async callGemini(prompt: string, expectJson = false): Promise<string> {
+  public async callGemini(
+    prompt: string,
+    optionsOrExpectJson: boolean | GeminiCallOptions = false
+  ): Promise<string> {
+    const options: GeminiCallOptions =
+      typeof optionsOrExpectJson === 'boolean'
+        ? { expectJson: optionsOrExpectJson }
+        : optionsOrExpectJson;
+
     const url = `${this.baseUrl}/models/${this.model}:generateContent?key=${encodeURIComponent(this.apiKey)}`;
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+
+    const generationConfig: Record<string, unknown> = {
+      temperature: options.temperature ?? 0.2,
+      thinkingConfig: {
+        thinkingLevel: options.thinkingLevel ?? 'low',
+      },
+      ...(options.expectJson ? { responseMimeType: 'application/json' } : {}),
+      ...(options.responseSchema ? { responseSchema: options.responseSchema } : {}),
+      ...(options.maxOutputTokens ? { maxOutputTokens: options.maxOutputTokens } : {}),
+    };
 
     try {
       const res = await fetch(url, {
@@ -338,10 +460,7 @@ Respond ONLY with a valid JSON object matching:
               parts: [{ text: prompt }],
             },
           ],
-          generationConfig: {
-            temperature: 0.2,
-            ...(expectJson ? { responseMimeType: 'application/json' } : {}),
-          },
+          generationConfig,
         }),
         signal: controller.signal,
       });
@@ -375,6 +494,15 @@ Respond ONLY with a valid JSON object matching:
       }
 
       const json = (await res.json()) as any;
+      if (json.usageMetadata) {
+        this.lastUsage = {
+          promptTokenCount: json.usageMetadata.promptTokenCount,
+          candidatesTokenCount: json.usageMetadata.candidatesTokenCount,
+          thoughtsTokenCount: json.usageMetadata.thoughtsTokenCount,
+          totalTokenCount: json.usageMetadata.totalTokenCount,
+        };
+      }
+
       const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!text) {
         throw new Error('Gemini returned empty response content');
@@ -383,6 +511,9 @@ Respond ONLY with a valid JSON object matching:
       logger.info('Gemini API call succeeded', {
         provider: 'gemini',
         model: this.model,
+        promptTokens: this.lastUsage?.promptTokenCount,
+        candidateTokens: this.lastUsage?.candidatesTokenCount,
+        thoughtTokens: this.lastUsage?.thoughtsTokenCount,
       });
 
       return text;

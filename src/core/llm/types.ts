@@ -43,6 +43,12 @@ export interface LLMSynthesisResponse {
   findings: Finding[];
   hypotheses: Hypothesis[];
   openQuestions: string[];
+  usage?: {
+    promptTokens?: number;
+    candidateTokens?: number;
+    thoughtTokens?: number;
+    totalTokens?: number;
+  };
 }
 
 export interface LLMChallengeRequest {

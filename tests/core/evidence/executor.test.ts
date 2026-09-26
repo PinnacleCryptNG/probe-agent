@@ -526,4 +526,249 @@ describe('EvidenceExecutor (Phase 2A Evidence Execution Engine)', () => {
     expect(results[0].capability).toBe('token_information');
     expect(results[1].capability).toBe('flow_intelligence');
   });
+
+  // 15. Concurrent execution
+  it('15. concurrent executeMany executes independent requirements concurrently', async () => {
+    let call1Active = false;
+    let call2Active = false;
+    let overlapped = false;
+
+    vi.mocked(mockNansenClient.getTokenInformation).mockImplementation(async () => {
+      call1Active = true;
+      if (call2Active) overlapped = true;
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      call1Active = false;
+      return createMockNansenResponse(TEST_FIXTURE_TOKEN_INFORMATION, 1);
+    });
+
+    vi.mocked(mockNansenClient.getFlowIntelligence).mockImplementation(async () => {
+      call2Active = true;
+      if (call1Active) overlapped = true;
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      call2Active = false;
+      return createMockNansenResponse(TEST_FIXTURE_FLOW_INTELLIGENCE, 1);
+    });
+
+    const reqs: EvidenceRequirement[] = [
+      {
+        id: 'req_conc_1',
+        capabilityName: 'token_information',
+        reason: 'Call 1',
+        parameters: { token_address: '0x123', chain: 'ethereum' },
+        priority: 1,
+        estimatedCost: 1,
+      },
+      {
+        id: 'req_conc_2',
+        capabilityName: 'flow_intelligence',
+        reason: 'Call 2',
+        parameters: { token_address: '0x123', chain: 'ethereum' },
+        priority: 2,
+        estimatedCost: 1,
+      },
+    ];
+
+    const results = await executor.executeMany(reqs, defaultContext);
+
+    expect(results).toHaveLength(2);
+    expect(results[0].success).toBe(true);
+    expect(results[1].success).toBe(true);
+    expect(overlapped).toBe(true);
+  });
+
+  // 16. Partial failure tolerance
+  it('16. preserves successful evidence when one concurrent requirement fails', async () => {
+    vi.mocked(mockNansenClient.getTokenInformation).mockResolvedValueOnce(
+      createMockNansenResponse(TEST_FIXTURE_TOKEN_INFORMATION, 1)
+    );
+    vi.mocked(mockNansenClient.getFlowIntelligence).mockRejectedValueOnce(
+      new NansenUnavailableError('Nansen 500 Internal Error')
+    );
+
+    const reqs: EvidenceRequirement[] = [
+      {
+        id: 'req_success',
+        capabilityName: 'token_information',
+        reason: 'Succeeding capability',
+        parameters: { token_address: '0x123', chain: 'ethereum' },
+        priority: 1,
+        estimatedCost: 1,
+      },
+      {
+        id: 'req_fail',
+        capabilityName: 'flow_intelligence',
+        reason: 'Failing capability',
+        parameters: { token_address: '0x123', chain: 'ethereum' },
+        priority: 2,
+        estimatedCost: 1,
+      },
+    ];
+
+    const results = await executor.executeMany(reqs, defaultContext);
+
+    expect(results).toHaveLength(2);
+    // Successful requirement produced evidence
+    expect(results[0].success).toBe(true);
+    expect(results[0].evidence.length).toBeGreaterThan(0);
+    // Failed requirement has error and did not discard successful evidence
+    expect(results[1].success).toBe(false);
+    expect(results[1].errors[0]).toContain('Nansen 500 Internal Error');
+  });
+
+  // 17. Credit budget race condition prevention
+  it('17. prevents credit budget over-allocation race condition during concurrent execution', async () => {
+    // Only 2 credits available in total
+    const lowCreditManager = new CreditBudgetManager({ totalBudget: 2, maxCallsPerTurn: 10 });
+    const raceExecutor = new EvidenceExecutor({
+      capabilityRegistry: registry,
+      nansenClient: mockNansenClient,
+      creditManager: lowCreditManager,
+      cache,
+      normalizer,
+    });
+
+    vi.mocked(mockNansenClient.getTokenInformation).mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return createMockNansenResponse(TEST_FIXTURE_TOKEN_INFORMATION, 1);
+    });
+
+    // 3 requirements, each costing 1 credit
+    const reqs: EvidenceRequirement[] = [
+      {
+        id: 'req_race_1',
+        capabilityName: 'token_information',
+        reason: 'Call 1',
+        parameters: { token_address: '0x111', chain: 'ethereum' },
+        priority: 1,
+        estimatedCost: 1,
+      },
+      {
+        id: 'req_race_2',
+        capabilityName: 'token_information',
+        reason: 'Call 2',
+        parameters: { token_address: '0x222', chain: 'ethereum' },
+        priority: 2,
+        estimatedCost: 1,
+      },
+      {
+        id: 'req_race_3',
+        capabilityName: 'token_information',
+        reason: 'Call 3 (Must be rejected, exceeding budget of 2)',
+        parameters: { token_address: '0x333', chain: 'ethereum' },
+        priority: 3,
+        estimatedCost: 1,
+      },
+    ];
+
+    const results = await raceExecutor.executeMany(reqs, defaultContext);
+
+    expect(results).toHaveLength(3);
+    const successful = results.filter((r) => r.success);
+    const failed = results.filter((r) => !r.success);
+
+    expect(successful).toHaveLength(2);
+    expect(failed).toHaveLength(1);
+    expect(failed[0].errors[0]).toContain('Credit budget exceeded');
+    expect(lowCreditManager.getSpentBudget()).toBeLessThanOrEqual(2);
+    expect(lowCreditManager.getRemainingBudget()).toBeGreaterThanOrEqual(0);
+  });
+
+  // 18. Per-turn call limit enforcement during concurrent execution
+  it('18. prevents turn call counter race condition during concurrent execution', async () => {
+    const strictTurnManager = new CreditBudgetManager({ totalBudget: 100, maxCallsPerTurn: 2 });
+    const turnExecutor = new EvidenceExecutor({
+      capabilityRegistry: registry,
+      nansenClient: mockNansenClient,
+      creditManager: strictTurnManager,
+      cache,
+      normalizer,
+    });
+
+    vi.mocked(mockNansenClient.getTokenInformation).mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return createMockNansenResponse(TEST_FIXTURE_TOKEN_INFORMATION, 1);
+    });
+
+    const reqs: EvidenceRequirement[] = [
+      {
+        id: 'req_turn_1',
+        capabilityName: 'token_information',
+        reason: 'Call 1',
+        parameters: { token_address: '0x111', chain: 'ethereum' },
+        priority: 1,
+        estimatedCost: 1,
+      },
+      {
+        id: 'req_turn_2',
+        capabilityName: 'token_information',
+        reason: 'Call 2',
+        parameters: { token_address: '0x222', chain: 'ethereum' },
+        priority: 2,
+        estimatedCost: 1,
+      },
+      {
+        id: 'req_turn_3',
+        capabilityName: 'token_information',
+        reason: 'Call 3 (Must exceed turn limit of 2)',
+        parameters: { token_address: '0x333', chain: 'ethereum' },
+        priority: 3,
+        estimatedCost: 1,
+      },
+    ];
+
+    const results = await turnExecutor.executeMany(reqs, {
+      ...defaultContext,
+      turnKey: 'test_turn_strict_concurrency',
+    });
+
+    expect(results).toHaveLength(3);
+    const successful = results.filter((r) => r.success);
+    const failed = results.filter((r) => !r.success);
+
+    expect(successful).toHaveLength(2);
+    expect(failed).toHaveLength(1);
+    expect(failed[0].errors[0]).toContain('Exceeded maximum allowed Nansen calls per turn: attempted 3, maximum is 2');
+    expect(strictTurnManager.getTurnCallCount('test_turn_strict_concurrency')).toBe(2);
+  });
+
+  // 19. Cache hits alongside live calls
+  it('19. concurrent executeMany preserves cache hits alongside live calls', async () => {
+    const reqCached: EvidenceRequirement = {
+      id: 'req_cached',
+      capabilityName: 'token_information',
+      reason: 'In cache',
+      parameters: { token_address: '0x123', chain: 'ethereum' },
+      priority: 1,
+      estimatedCost: 1,
+    };
+
+    const reqLive: EvidenceRequirement = {
+      id: 'req_live',
+      capabilityName: 'flow_intelligence',
+      reason: 'Live network call',
+      parameters: { token_address: '0x123', chain: 'ethereum' },
+      priority: 2,
+      estimatedCost: 1,
+    };
+
+    // 1. Populate cache for token_information by executing once
+    const firstRes = await executor.execute(reqCached, defaultContext);
+    expect(firstRes.cacheHit).toBe(false);
+    expect(mockNansenClient.getTokenInformation).toHaveBeenCalledTimes(1);
+
+    vi.mocked(mockNansenClient.getFlowIntelligence).mockResolvedValueOnce(
+      createMockNansenResponse(TEST_FIXTURE_FLOW_INTELLIGENCE, 1)
+    );
+
+    // 2. Execute concurrently: reqCached will hit cache, reqLive will hit mock client
+    const results = await executor.executeMany([reqCached, reqLive], defaultContext);
+
+    expect(results).toHaveLength(2);
+    expect(results[0].cacheHit).toBe(true);
+    expect(results[0].actualCreditCost).toBe(0);
+    expect(results[1].cacheHit).toBe(false);
+    expect(results[1].actualCreditCost).toBe(1);
+    expect(mockNansenClient.getTokenInformation).toHaveBeenCalledTimes(1);
+    expect(mockNansenClient.getFlowIntelligence).toHaveBeenCalledTimes(1);
+  });
 });

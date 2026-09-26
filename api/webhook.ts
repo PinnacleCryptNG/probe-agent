@@ -4,6 +4,7 @@ import type { Update } from 'grammy/types';
 import { getOrInitRuntime } from '../src/index.js';
 import { getEnv } from '../src/config/env.js';
 import { logger } from '../src/utils/logger.js';
+import { profiler } from '../src/utils/profiler.js';
 
 const SECRET_HEADER = 'x-telegram-bot-api-secret-token';
 
@@ -129,6 +130,7 @@ export async function getWebhookHandler(): Promise<(...args: unknown[]) => Promi
   }
 
   cachedHandler = async (...args: unknown[]) => {
+    profiler.startRequest();
     const firstArg = args[0];
 
     // Check if called with Web Standard Request (Fetch API / Edge)

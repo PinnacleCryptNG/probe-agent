@@ -30,6 +30,7 @@ export class CreditBudgetManager {
   private totalBudget: number;
   private maxCallsPerTurn: number;
   private spentBudget = 0;
+  private reservedBudget = 0;
   private investigationCosts = new Map<string, number>();
   private userCosts = new Map<string, number>();
   private turnCallCounters = new Map<string, number>();
@@ -41,7 +42,11 @@ export class CreditBudgetManager {
   }
 
   public getRemainingBudget(): number {
-    return Math.max(0, this.totalBudget - this.spentBudget);
+    return Math.max(0, this.totalBudget - this.spentBudget - this.reservedBudget);
+  }
+
+  public getReservedBudget(): number {
+    return this.reservedBudget;
   }
 
   public getTotalBudget(): number {
@@ -69,6 +74,21 @@ export class CreditBudgetManager {
       });
       throw new CreditBudgetExceededError(estimatedCost, remaining);
     }
+  }
+
+  /**
+   * Reserves estimated credits before an async live call begins, preventing concurrent race conditions.
+   */
+  public reserveCredits(estimatedCost: number): void {
+    this.assertCanSpend(estimatedCost);
+    this.reservedBudget += estimatedCost;
+  }
+
+  /**
+   * Releases previously reserved credits when an async live call finishes or fails.
+   */
+  public releaseReservation(estimatedCost: number): void {
+    this.reservedBudget = Math.max(0, this.reservedBudget - estimatedCost);
   }
 
   /**
@@ -104,6 +124,10 @@ export class CreditBudgetManager {
     endpoint?: string;
   }): void {
     const costToCharge = usage.actualCost !== undefined ? usage.actualCost : usage.estimatedCost;
+
+    if (this.reservedBudget > 0) {
+      this.reservedBudget = Math.max(0, this.reservedBudget - usage.estimatedCost);
+    }
 
     this.spentBudget += costToCharge;
 
@@ -155,6 +179,7 @@ export class CreditBudgetManager {
 
   public reset(): void {
     this.spentBudget = 0;
+    this.reservedBudget = 0;
     this.investigationCosts.clear();
     this.userCosts.clear();
     this.turnCallCounters.clear();

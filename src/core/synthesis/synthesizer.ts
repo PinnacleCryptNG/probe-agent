@@ -10,6 +10,7 @@ import {
   SynthesisResult,
   SynthesisUnknown,
 } from './types.js';
+import { profiler } from '../../utils/profiler.js';
 
 export interface SynthesisEngineDependencies {
   llmProvider: ILLMProvider;
@@ -546,11 +547,19 @@ export class EvidenceSynthesisEngine {
 
     // 3. Ask LLM provider for synthesis
     try {
+      const tLlmStart = Date.now();
       const llmResponse = await this.llmProvider.synthesizeAnswer({
         tokenContext: request.tokenContext,
         userQuestion: request.question,
         evidence: request.evidence,
         conversationHistory: request.conversationHistory ?? [],
+      });
+      const tLlmEnd = Date.now();
+      profiler.recordStage('6. Gemini/LLM synthesis', tLlmStart, tLlmEnd);
+      profiler.recordLlmCall({
+        provider: this.llmProvider.constructor.name,
+        durationMs: tLlmEnd - tLlmStart,
+        usage: llmResponse.usage,
       });
 
       // Check if LLM returned structured headline
@@ -663,12 +672,17 @@ export class EvidenceSynthesisEngine {
     };
 
     // 9. Run EvidenceValidator
+    const tValStart = Date.now();
     const validation = this.validator.validate(
       candidateResult,
       request.evidence,
       request.investigationId,
       request.tokenContext.address
     );
+    const tValEnd = Date.now();
+    profiler.recordStage('7. Evidence validation', tValStart, tValEnd, {
+      isValid: validation.isValid,
+    });
 
     if (!validation.isValid) {
       logger.error('Synthesis validation failed', {
