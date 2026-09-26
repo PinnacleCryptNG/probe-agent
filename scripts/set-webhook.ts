@@ -5,7 +5,7 @@ dotenv.config();
 
 async function main(): Promise<void> {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  const rawUrl = process.env.VERCEL_WEBHOOK_URL;
+  const rawUrl = process.argv[2] || process.env.VERCEL_WEBHOOK_URL;
   const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
 
   if (!botToken || botToken === 'dummy_telegram_token_for_testing') {
@@ -15,7 +15,7 @@ async function main(): Promise<void> {
 
   if (!rawUrl || rawUrl.trim() === '') {
     console.error(
-      '❌ Error: VERCEL_WEBHOOK_URL is missing. Please set VERCEL_WEBHOOK_URL (e.g. https://your-project.vercel.app).'
+      '❌ Error: Webhook URL is missing. Provide it as an argument or set VERCEL_WEBHOOK_URL in .env (e.g. npx tsx scripts/set-webhook.ts https://probe-agent.vercel.app/api/webhook).'
     );
     process.exit(1);
   }
