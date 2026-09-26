@@ -1,0 +1,43 @@
+{
+  "name": "probe-agent",
+  "version": "0.1.0",
+  "description": "PROBE: Telegram-first conversational on-chain investigation agent powered by the Nansen API",
+  "type": "module",
+  "main": "dist/src/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/src/index.js",
+    "dev": "tsx watch src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint \"src/**/*.ts\"",
+    "diagnose": "tsx scripts/diagnose-token.ts"
+  },
+  "keywords": [
+    "blockchain",
+    "investigation",
+    "nansen",
+    "telegram",
+    "agent",
+    "onchain"
+  ],
+  "author": "PROBE Team",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "grammy": "^1.35.0",
+    "pg": "^8.13.3",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.9",
+    "@types/pg": "^8.11.11",
+    "@typescript-eslint/eslint-plugin": "^8.25.0",
+    "@typescript-eslint/parser": "^8.25.0",
+    "eslint": "^9.21.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.7"
+  }
+}

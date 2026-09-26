@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build",
+  "functions": {
+    "api/webhook.ts": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  }
+}

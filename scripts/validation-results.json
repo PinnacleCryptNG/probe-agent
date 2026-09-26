@@ -1,0 +1,1123 @@
+{
+  "results": [
+    {
+      "input": "What's happening?",
+      "tokenSymbol": "ETH",
+      "tokenAddress": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "chain": "ethereum",
+      "intent": "activity_change",
+      "selectedCapabilities": [
+        "token_information",
+        "flow_intelligence",
+        "who_bought_sold",
+        "historical_flows"
+      ],
+      "plannedCapabilities": [
+        "token_information",
+        "flow_intelligence",
+        "who_bought_sold",
+        "historical_flows"
+      ],
+      "endpointsCalled": [
+        "/api/v1/tgm/token-information",
+        "/api/v1/tgm/flow-intelligence",
+        "/api/v1/tgm/who-bought-sold",
+        "/api/v1/tgm/flows"
+      ],
+      "creditCost": 4,
+      "remainingCredits": 1096,
+      "evidenceCount": 4,
+      "evidenceItems": [
+        {
+          "id": "evi_31f1e813-a871-4e68-bb13-da213e263a1d",
+          "capability": "token_information",
+          "summary": "Spot metadata for Wrapped Ether (WETH): price $2,724.73, market cap $5,671,032,045, 24h volume $391,978,221, holders 589,221."
+        },
+        {
+          "id": "evi_e2c301ec-71a7-4c90-a2f0-c783ca293e6b",
+          "capability": "flow_intelligence",
+          "summary": "Cohort net flows: Smart Money/Top PnL $-100,030, Fresh Wallets $830,128,242, Exchanges $-352,766,567, Whales $-14,805."
+        },
+        {
+          "id": "evi_a77d7efe-e4b3-479d-ab3d-336e85764c97",
+          "capability": "who_bought_sold",
+          "summary": "Identified 10 top net buyers and 0 top net sellers. Top accumulator: Token Millionaire."
+        },
+        {
+          "id": "evi_9a168c65-8537-4606-a23f-c7b833d539f6",
+          "capability": "historical_flows",
+          "summary": "Retrieved 10 time-series flow records."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_e2c301ec-71a7-4c90-a2f0-c783ca293e6b"
+      ],
+      "observationsCount": 4,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 ETH — What's happening?\n\nFresh-wallet and exchange activity are the clearest signals in the available data.\n\n• Fresh wallets: +$830.13M net flow\n• Exchanges: -$352.77M\n• Smart Money / Top PnL: -$0.10M\n• Whales: +$-0.01M\n\nThis points to substantial fresh-wallet inflows during the observed period, while the available whale cohort data does not show net movement.\n\nEvidence\n• Cohort net flows\n• Top buyer/seller data\n• ETH/WETH token metrics\n\nAsk another question about ETH.",
+      "errors": []
+    },
+    {
+      "input": "Who is buying?",
+      "tokenSymbol": "ETH",
+      "tokenAddress": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "chain": "ethereum",
+      "intent": "accumulation",
+      "selectedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "dex_trades"
+      ],
+      "plannedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "dex_trades"
+      ],
+      "endpointsCalled": [
+        "/api/v1/tgm/dex-trades"
+      ],
+      "creditCost": 1,
+      "remainingCredits": 1095,
+      "evidenceCount": 3,
+      "evidenceItems": [
+        {
+          "id": "evi_a77d7efe-e4b3-479d-ab3d-336e85764c97",
+          "capability": "who_bought_sold",
+          "summary": "Identified 10 top net buyers and 0 top net sellers. Top accumulator: Token Millionaire."
+        },
+        {
+          "id": "evi_e2c301ec-71a7-4c90-a2f0-c783ca293e6b",
+          "capability": "flow_intelligence",
+          "summary": "Cohort net flows: Smart Money/Top PnL $-100,030, Fresh Wallets $830,128,242, Exchanges $-352,766,567, Whales $-14,805."
+        },
+        {
+          "id": "evi_25bed35f-77fc-4beb-858d-7083c6190301",
+          "capability": "dex_trades",
+          "summary": "Retrieved 10 decentralized exchange swap events."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_e2c301ec-71a7-4c90-a2f0-c783ca293e6b"
+      ],
+      "observationsCount": 4,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 ETH — Who is buying?\n\nFresh-wallet and exchange activity are the clearest signals in the available data.\n\n• Fresh wallets: +$830.13M net flow\n• Exchanges: -$352.77M\n• Smart Money / Top PnL: -$0.10M\n• Whales: +$-0.01M\n\nThis points to substantial fresh-wallet inflows during the observed period, while the available whale cohort data does not show net movement.\n\nEvidence\n• Cohort net flows\n• Top buyer/seller data\n\nAsk another question about ETH.",
+      "errors": []
+    },
+    {
+      "input": "Who is selling?",
+      "tokenSymbol": "ETH",
+      "tokenAddress": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "chain": "ethereum",
+      "intent": "distribution",
+      "selectedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "token_transfers"
+      ],
+      "plannedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "token_transfers"
+      ],
+      "endpointsCalled": [
+        "/api/v1/tgm/transfers"
+      ],
+      "creditCost": 1,
+      "remainingCredits": 1094,
+      "evidenceCount": 3,
+      "evidenceItems": [
+        {
+          "id": "evi_a77d7efe-e4b3-479d-ab3d-336e85764c97",
+          "capability": "who_bought_sold",
+          "summary": "Identified 10 top net buyers and 0 top net sellers. Top accumulator: Token Millionaire."
+        },
+        {
+          "id": "evi_e2c301ec-71a7-4c90-a2f0-c783ca293e6b",
+          "capability": "flow_intelligence",
+          "summary": "Cohort net flows: Smart Money/Top PnL $-100,030, Fresh Wallets $830,128,242, Exchanges $-352,766,567, Whales $-14,805."
+        },
+        {
+          "id": "evi_03c6e094-01f8-4bce-8551-9cca3cc0131a",
+          "capability": "token_transfers",
+          "summary": "Retrieved 10 token transfer transactions."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_e2c301ec-71a7-4c90-a2f0-c783ca293e6b"
+      ],
+      "observationsCount": 4,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 ETH — Who is selling?\n\nFresh-wallet and exchange activity are the clearest signals in the available data.\n\n• Fresh wallets: +$830.13M net flow\n• Exchanges: -$352.77M\n• Smart Money / Top PnL: -$0.10M\n• Whales: +$-0.01M\n\nThis points to substantial fresh-wallet inflows during the observed period, while the available whale cohort data does not show net movement.\n\nEvidence\n• Cohort net flows\n• Top buyer/seller data\n• Large transaction transfers\n\nAsk another question about ETH.",
+      "errors": []
+    },
+    {
+      "input": "Biggest transactions",
+      "tokenSymbol": "ETH",
+      "tokenAddress": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "chain": "ethereum",
+      "intent": "large_transactions",
+      "selectedCapabilities": [
+        "token_transfers",
+        "dex_trades"
+      ],
+      "plannedCapabilities": [
+        "token_transfers",
+        "dex_trades"
+      ],
+      "endpointsCalled": [],
+      "creditCost": 0,
+      "remainingCredits": 1094,
+      "evidenceCount": 2,
+      "evidenceItems": [
+        {
+          "id": "evi_03c6e094-01f8-4bce-8551-9cca3cc0131a",
+          "capability": "token_transfers",
+          "summary": "Retrieved 10 token transfer transactions."
+        },
+        {
+          "id": "evi_25bed35f-77fc-4beb-858d-7083c6190301",
+          "capability": "dex_trades",
+          "summary": "Retrieved 10 decentralized exchange swap events."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_03c6e094-01f8-4bce-8551-9cca3cc0131a"
+      ],
+      "observationsCount": 1,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 ETH — Biggest transactions\n\nOn-chain evidence for ETH indicates active transaction and flow participation.\n\n• Large transfers detected among monitored network counterparties\n\nObserved patterns reflect net accumulation activity, while the available evidence does not establish off-chain catalysts.\n\nEvidence\n• Large transaction transfers\n\nAsk another question about ETH.",
+      "errors": []
+    },
+    {
+      "input": "Are whales accumulating?",
+      "tokenSymbol": "ETH",
+      "tokenAddress": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "chain": "ethereum",
+      "intent": "accumulation",
+      "selectedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "dex_trades"
+      ],
+      "plannedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "dex_trades"
+      ],
+      "endpointsCalled": [],
+      "creditCost": 0,
+      "remainingCredits": 1094,
+      "evidenceCount": 3,
+      "evidenceItems": [
+        {
+          "id": "evi_a77d7efe-e4b3-479d-ab3d-336e85764c97",
+          "capability": "who_bought_sold",
+          "summary": "Identified 10 top net buyers and 0 top net sellers. Top accumulator: Token Millionaire."
+        },
+        {
+          "id": "evi_e2c301ec-71a7-4c90-a2f0-c783ca293e6b",
+          "capability": "flow_intelligence",
+          "summary": "Cohort net flows: Smart Money/Top PnL $-100,030, Fresh Wallets $830,128,242, Exchanges $-352,766,567, Whales $-14,805."
+        },
+        {
+          "id": "evi_25bed35f-77fc-4beb-858d-7083c6190301",
+          "capability": "dex_trades",
+          "summary": "Retrieved 10 decentralized exchange swap events."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_e2c301ec-71a7-4c90-a2f0-c783ca293e6b"
+      ],
+      "observationsCount": 4,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 ETH — Are whales accumulating?\n\nFresh-wallet and exchange activity are the clearest signals in the available data.\n\n• Fresh wallets: +$830.13M net flow\n• Exchanges: -$352.77M\n• Smart Money / Top PnL: -$0.10M\n• Whales: +$-0.01M\n\nThis points to substantial fresh-wallet inflows during the observed period, while the available whale cohort data does not show net movement.\n\nEvidence\n• Cohort net flows\n• Top buyer/seller data\n\nAsk another question about ETH.",
+      "errors": []
+    },
+    {
+      "input": "Are smart money wallets accumulating?",
+      "tokenSymbol": "ETH",
+      "tokenAddress": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "chain": "ethereum",
+      "intent": "accumulation",
+      "selectedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "dex_trades"
+      ],
+      "plannedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "dex_trades"
+      ],
+      "endpointsCalled": [],
+      "creditCost": 0,
+      "remainingCredits": 1094,
+      "evidenceCount": 3,
+      "evidenceItems": [
+        {
+          "id": "evi_a77d7efe-e4b3-479d-ab3d-336e85764c97",
+          "capability": "who_bought_sold",
+          "summary": "Identified 10 top net buyers and 0 top net sellers. Top accumulator: Token Millionaire."
+        },
+        {
+          "id": "evi_e2c301ec-71a7-4c90-a2f0-c783ca293e6b",
+          "capability": "flow_intelligence",
+          "summary": "Cohort net flows: Smart Money/Top PnL $-100,030, Fresh Wallets $830,128,242, Exchanges $-352,766,567, Whales $-14,805."
+        },
+        {
+          "id": "evi_25bed35f-77fc-4beb-858d-7083c6190301",
+          "capability": "dex_trades",
+          "summary": "Retrieved 10 decentralized exchange swap events."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_e2c301ec-71a7-4c90-a2f0-c783ca293e6b"
+      ],
+      "observationsCount": 4,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 ETH — Are smart money wallets accumulating?\n\nFresh-wallet and exchange activity are the clearest signals in the available data.\n\n• Fresh wallets: +$830.13M net flow\n• Exchanges: -$352.77M\n• Smart Money / Top PnL: -$0.10M\n• Whales: +$-0.01M\n\nThis points to substantial fresh-wallet inflows during the observed period, while the available whale cohort data does not show net movement.\n\nEvidence\n• Cohort net flows\n• Top buyer/seller data\n\nAsk another question about ETH.",
+      "errors": []
+    },
+    {
+      "input": "What changed recently?",
+      "tokenSymbol": "ETH",
+      "tokenAddress": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "chain": "ethereum",
+      "intent": "activity_change",
+      "selectedCapabilities": [
+        "token_information",
+        "flow_intelligence",
+        "who_bought_sold",
+        "historical_flows"
+      ],
+      "plannedCapabilities": [
+        "token_information",
+        "flow_intelligence",
+        "who_bought_sold",
+        "historical_flows"
+      ],
+      "endpointsCalled": [],
+      "creditCost": 0,
+      "remainingCredits": 1094,
+      "evidenceCount": 4,
+      "evidenceItems": [
+        {
+          "id": "evi_31f1e813-a871-4e68-bb13-da213e263a1d",
+          "capability": "token_information",
+          "summary": "Spot metadata for Wrapped Ether (WETH): price $2,724.73, market cap $5,671,032,045, 24h volume $391,978,221, holders 589,221."
+        },
+        {
+          "id": "evi_e2c301ec-71a7-4c90-a2f0-c783ca293e6b",
+          "capability": "flow_intelligence",
+          "summary": "Cohort net flows: Smart Money/Top PnL $-100,030, Fresh Wallets $830,128,242, Exchanges $-352,766,567, Whales $-14,805."
+        },
+        {
+          "id": "evi_a77d7efe-e4b3-479d-ab3d-336e85764c97",
+          "capability": "who_bought_sold",
+          "summary": "Identified 10 top net buyers and 0 top net sellers. Top accumulator: Token Millionaire."
+        },
+        {
+          "id": "evi_9a168c65-8537-4606-a23f-c7b833d539f6",
+          "capability": "historical_flows",
+          "summary": "Retrieved 10 time-series flow records."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_e2c301ec-71a7-4c90-a2f0-c783ca293e6b"
+      ],
+      "observationsCount": 4,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 ETH — What changed recently?\n\nFresh-wallet and exchange activity are the clearest signals in the available data.\n\n• Fresh wallets: +$830.13M net flow\n• Exchanges: -$352.77M\n• Smart Money / Top PnL: -$0.10M\n• Whales: +$-0.01M\n\nThis points to substantial fresh-wallet inflows during the observed period, while the available whale cohort data does not show net movement.\n\nEvidence\n• Cohort net flows\n• Top buyer/seller data\n• ETH/WETH token metrics\n\nAsk another question about ETH.",
+      "errors": []
+    },
+    {
+      "input": "Show me the largest buyers.",
+      "tokenSymbol": "ETH",
+      "tokenAddress": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "chain": "ethereum",
+      "intent": "accumulation",
+      "selectedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "dex_trades"
+      ],
+      "plannedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "dex_trades"
+      ],
+      "endpointsCalled": [],
+      "creditCost": 0,
+      "remainingCredits": 1094,
+      "evidenceCount": 3,
+      "evidenceItems": [
+        {
+          "id": "evi_a77d7efe-e4b3-479d-ab3d-336e85764c97",
+          "capability": "who_bought_sold",
+          "summary": "Identified 10 top net buyers and 0 top net sellers. Top accumulator: Token Millionaire."
+        },
+        {
+          "id": "evi_e2c301ec-71a7-4c90-a2f0-c783ca293e6b",
+          "capability": "flow_intelligence",
+          "summary": "Cohort net flows: Smart Money/Top PnL $-100,030, Fresh Wallets $830,128,242, Exchanges $-352,766,567, Whales $-14,805."
+        },
+        {
+          "id": "evi_25bed35f-77fc-4beb-858d-7083c6190301",
+          "capability": "dex_trades",
+          "summary": "Retrieved 10 decentralized exchange swap events."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_e2c301ec-71a7-4c90-a2f0-c783ca293e6b"
+      ],
+      "observationsCount": 4,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 ETH — Show me the largest buyers.\n\nFresh-wallet and exchange activity are the clearest signals in the available data.\n\n• Fresh wallets: +$830.13M net flow\n• Exchanges: -$352.77M\n• Smart Money / Top PnL: -$0.10M\n• Whales: +$-0.01M\n\nThis points to substantial fresh-wallet inflows during the observed period, while the available whale cohort data does not show net movement.\n\nEvidence\n• Cohort net flows\n• Top buyer/seller data\n\nAsk another question about ETH.",
+      "errors": []
+    },
+    {
+      "input": "Show me the largest sellers.",
+      "tokenSymbol": "ETH",
+      "tokenAddress": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "chain": "ethereum",
+      "intent": "distribution",
+      "selectedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "token_transfers"
+      ],
+      "plannedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "token_transfers"
+      ],
+      "endpointsCalled": [],
+      "creditCost": 0,
+      "remainingCredits": 1094,
+      "evidenceCount": 3,
+      "evidenceItems": [
+        {
+          "id": "evi_a77d7efe-e4b3-479d-ab3d-336e85764c97",
+          "capability": "who_bought_sold",
+          "summary": "Identified 10 top net buyers and 0 top net sellers. Top accumulator: Token Millionaire."
+        },
+        {
+          "id": "evi_e2c301ec-71a7-4c90-a2f0-c783ca293e6b",
+          "capability": "flow_intelligence",
+          "summary": "Cohort net flows: Smart Money/Top PnL $-100,030, Fresh Wallets $830,128,242, Exchanges $-352,766,567, Whales $-14,805."
+        },
+        {
+          "id": "evi_03c6e094-01f8-4bce-8551-9cca3cc0131a",
+          "capability": "token_transfers",
+          "summary": "Retrieved 10 token transfer transactions."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_e2c301ec-71a7-4c90-a2f0-c783ca293e6b"
+      ],
+      "observationsCount": 4,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 ETH — Show me the largest sellers.\n\nFresh-wallet and exchange activity are the clearest signals in the available data.\n\n• Fresh wallets: +$830.13M net flow\n• Exchanges: -$352.77M\n• Smart Money / Top PnL: -$0.10M\n• Whales: +$-0.01M\n\nThis points to substantial fresh-wallet inflows during the observed period, while the available whale cohort data does not show net movement.\n\nEvidence\n• Cohort net flows\n• Top buyer/seller data\n• Large transaction transfers\n\nAsk another question about ETH.",
+      "errors": []
+    },
+    {
+      "input": "What's happening?",
+      "tokenSymbol": "BONK",
+      "tokenAddress": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+      "chain": "solana",
+      "intent": "activity_change",
+      "selectedCapabilities": [
+        "token_information",
+        "flow_intelligence",
+        "who_bought_sold",
+        "historical_flows"
+      ],
+      "plannedCapabilities": [
+        "token_information",
+        "flow_intelligence",
+        "who_bought_sold",
+        "historical_flows"
+      ],
+      "endpointsCalled": [
+        "/api/v1/tgm/token-information",
+        "/api/v1/tgm/flow-intelligence",
+        "/api/v1/tgm/who-bought-sold",
+        "/api/v1/tgm/flows"
+      ],
+      "creditCost": 4,
+      "remainingCredits": 1090,
+      "evidenceCount": 4,
+      "evidenceItems": [
+        {
+          "id": "evi_4d62447a-6b6f-46ba-bdfb-56e3036af728",
+          "capability": "token_information",
+          "summary": "Spot metadata for Bonk (BONK): price $0, market cap $332,242,864, 24h volume $2,895,230, holders 240,723."
+        },
+        {
+          "id": "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81",
+          "capability": "flow_intelligence",
+          "summary": "Cohort net flows: Smart Money/Top PnL $-712, Fresh Wallets $633,343, Exchanges $269,734, Whales $-120,730."
+        },
+        {
+          "id": "evi_3acf3ed6-4318-4afa-b1d7-fe150e008a87",
+          "capability": "who_bought_sold",
+          "summary": "Identified 10 top net buyers and 0 top net sellers. Top accumulator: FARTCOIN Whale."
+        },
+        {
+          "id": "evi_b444bb7a-6d87-4cb3-86c6-e7a95f438c7b",
+          "capability": "historical_flows",
+          "summary": "Retrieved 10 time-series flow records."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81"
+      ],
+      "observationsCount": 4,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 BONK — What's happening?\n\nFresh-wallet and exchange activity are the clearest signals in the available data.\n\n• Fresh wallets: +$0.63M net flow\n• Exchanges: +$0.27M\n• Smart Money / Top PnL: -$0.00M\n• Whales: +$-0.12M\n\nThis points to substantial fresh-wallet inflows during the observed period, while the available whale cohort data does not show net movement.\n\nEvidence\n• Cohort net flows\n• Top buyer/seller data\n• BONK token metrics\n\nAsk another question about BONK.",
+      "errors": []
+    },
+    {
+      "input": "Who is buying?",
+      "tokenSymbol": "BONK",
+      "tokenAddress": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+      "chain": "solana",
+      "intent": "accumulation",
+      "selectedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "dex_trades"
+      ],
+      "plannedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "dex_trades"
+      ],
+      "endpointsCalled": [
+        "/api/v1/tgm/dex-trades"
+      ],
+      "creditCost": 1,
+      "remainingCredits": 1089,
+      "evidenceCount": 3,
+      "evidenceItems": [
+        {
+          "id": "evi_3acf3ed6-4318-4afa-b1d7-fe150e008a87",
+          "capability": "who_bought_sold",
+          "summary": "Identified 10 top net buyers and 0 top net sellers. Top accumulator: FARTCOIN Whale."
+        },
+        {
+          "id": "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81",
+          "capability": "flow_intelligence",
+          "summary": "Cohort net flows: Smart Money/Top PnL $-712, Fresh Wallets $633,343, Exchanges $269,734, Whales $-120,730."
+        },
+        {
+          "id": "evi_19baee12-5c4e-4b1c-91ba-f57ac42a0fcb",
+          "capability": "dex_trades",
+          "summary": "Retrieved 10 decentralized exchange swap events."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81"
+      ],
+      "observationsCount": 4,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 BONK — Who is buying?\n\nFresh-wallet and exchange activity are the clearest signals in the available data.\n\n• Fresh wallets: +$0.63M net flow\n• Exchanges: +$0.27M\n• Smart Money / Top PnL: -$0.00M\n• Whales: +$-0.12M\n\nThis points to substantial fresh-wallet inflows during the observed period, while the available whale cohort data does not show net movement.\n\nEvidence\n• Cohort net flows\n• Top buyer/seller data\n\nAsk another question about BONK.",
+      "errors": []
+    },
+    {
+      "input": "Who is selling?",
+      "tokenSymbol": "BONK",
+      "tokenAddress": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+      "chain": "solana",
+      "intent": "distribution",
+      "selectedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "token_transfers"
+      ],
+      "plannedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "token_transfers"
+      ],
+      "endpointsCalled": [
+        "/api/v1/tgm/transfers"
+      ],
+      "creditCost": 1,
+      "remainingCredits": 1088,
+      "evidenceCount": 3,
+      "evidenceItems": [
+        {
+          "id": "evi_3acf3ed6-4318-4afa-b1d7-fe150e008a87",
+          "capability": "who_bought_sold",
+          "summary": "Identified 10 top net buyers and 0 top net sellers. Top accumulator: FARTCOIN Whale."
+        },
+        {
+          "id": "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81",
+          "capability": "flow_intelligence",
+          "summary": "Cohort net flows: Smart Money/Top PnL $-712, Fresh Wallets $633,343, Exchanges $269,734, Whales $-120,730."
+        },
+        {
+          "id": "evi_c4d781c7-dea1-482b-a4ef-07318f78cd43",
+          "capability": "token_transfers",
+          "summary": "Retrieved 10 token transfer transactions."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81"
+      ],
+      "observationsCount": 4,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 BONK — Who is selling?\n\nFresh-wallet and exchange activity are the clearest signals in the available data.\n\n• Fresh wallets: +$0.63M net flow\n• Exchanges: +$0.27M\n• Smart Money / Top PnL: -$0.00M\n• Whales: +$-0.12M\n\nThis points to substantial fresh-wallet inflows during the observed period, while the available whale cohort data does not show net movement.\n\nEvidence\n• Cohort net flows\n• Top buyer/seller data\n• Large transaction transfers\n\nAsk another question about BONK.",
+      "errors": []
+    },
+    {
+      "input": "Biggest transactions",
+      "tokenSymbol": "BONK",
+      "tokenAddress": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+      "chain": "solana",
+      "intent": "large_transactions",
+      "selectedCapabilities": [
+        "token_transfers",
+        "dex_trades"
+      ],
+      "plannedCapabilities": [
+        "token_transfers",
+        "dex_trades"
+      ],
+      "endpointsCalled": [],
+      "creditCost": 0,
+      "remainingCredits": 1088,
+      "evidenceCount": 2,
+      "evidenceItems": [
+        {
+          "id": "evi_c4d781c7-dea1-482b-a4ef-07318f78cd43",
+          "capability": "token_transfers",
+          "summary": "Retrieved 10 token transfer transactions."
+        },
+        {
+          "id": "evi_19baee12-5c4e-4b1c-91ba-f57ac42a0fcb",
+          "capability": "dex_trades",
+          "summary": "Retrieved 10 decentralized exchange swap events."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_c4d781c7-dea1-482b-a4ef-07318f78cd43"
+      ],
+      "observationsCount": 1,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 BONK — Biggest transactions\n\nOn-chain evidence for BONK indicates active transaction and flow participation.\n\n• Large transfers detected among monitored network counterparties\n\nObserved patterns reflect net accumulation activity, while the available evidence does not establish off-chain catalysts.\n\nEvidence\n• Large transaction transfers\n\nAsk another question about BONK.",
+      "errors": []
+    },
+    {
+      "input": "Are whales accumulating?",
+      "tokenSymbol": "BONK",
+      "tokenAddress": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+      "chain": "solana",
+      "intent": "accumulation",
+      "selectedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "dex_trades"
+      ],
+      "plannedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "dex_trades"
+      ],
+      "endpointsCalled": [],
+      "creditCost": 0,
+      "remainingCredits": 1088,
+      "evidenceCount": 3,
+      "evidenceItems": [
+        {
+          "id": "evi_3acf3ed6-4318-4afa-b1d7-fe150e008a87",
+          "capability": "who_bought_sold",
+          "summary": "Identified 10 top net buyers and 0 top net sellers. Top accumulator: FARTCOIN Whale."
+        },
+        {
+          "id": "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81",
+          "capability": "flow_intelligence",
+          "summary": "Cohort net flows: Smart Money/Top PnL $-712, Fresh Wallets $633,343, Exchanges $269,734, Whales $-120,730."
+        },
+        {
+          "id": "evi_19baee12-5c4e-4b1c-91ba-f57ac42a0fcb",
+          "capability": "dex_trades",
+          "summary": "Retrieved 10 decentralized exchange swap events."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81"
+      ],
+      "observationsCount": 4,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 BONK — Are whales accumulating?\n\nFresh-wallet and exchange activity are the clearest signals in the available data.\n\n• Fresh wallets: +$0.63M net flow\n• Exchanges: +$0.27M\n• Smart Money / Top PnL: -$0.00M\n• Whales: +$-0.12M\n\nThis points to substantial fresh-wallet inflows during the observed period, while the available whale cohort data does not show net movement.\n\nEvidence\n• Cohort net flows\n• Top buyer/seller data\n\nAsk another question about BONK.",
+      "errors": []
+    },
+    {
+      "input": "Are smart money wallets accumulating?",
+      "tokenSymbol": "BONK",
+      "tokenAddress": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+      "chain": "solana",
+      "intent": "accumulation",
+      "selectedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "dex_trades"
+      ],
+      "plannedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "dex_trades"
+      ],
+      "endpointsCalled": [],
+      "creditCost": 0,
+      "remainingCredits": 1088,
+      "evidenceCount": 3,
+      "evidenceItems": [
+        {
+          "id": "evi_3acf3ed6-4318-4afa-b1d7-fe150e008a87",
+          "capability": "who_bought_sold",
+          "summary": "Identified 10 top net buyers and 0 top net sellers. Top accumulator: FARTCOIN Whale."
+        },
+        {
+          "id": "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81",
+          "capability": "flow_intelligence",
+          "summary": "Cohort net flows: Smart Money/Top PnL $-712, Fresh Wallets $633,343, Exchanges $269,734, Whales $-120,730."
+        },
+        {
+          "id": "evi_19baee12-5c4e-4b1c-91ba-f57ac42a0fcb",
+          "capability": "dex_trades",
+          "summary": "Retrieved 10 decentralized exchange swap events."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81"
+      ],
+      "observationsCount": 4,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 BONK — Are smart money wallets accumulating?\n\nFresh-wallet and exchange activity are the clearest signals in the available data.\n\n• Fresh wallets: +$0.63M net flow\n• Exchanges: +$0.27M\n• Smart Money / Top PnL: -$0.00M\n• Whales: +$-0.12M\n\nThis points to substantial fresh-wallet inflows during the observed period, while the available whale cohort data does not show net movement.\n\nEvidence\n• Cohort net flows\n• Top buyer/seller data\n\nAsk another question about BONK.",
+      "errors": []
+    },
+    {
+      "input": "What changed recently?",
+      "tokenSymbol": "BONK",
+      "tokenAddress": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+      "chain": "solana",
+      "intent": "activity_change",
+      "selectedCapabilities": [
+        "token_information",
+        "flow_intelligence",
+        "who_bought_sold",
+        "historical_flows"
+      ],
+      "plannedCapabilities": [
+        "token_information",
+        "flow_intelligence",
+        "who_bought_sold",
+        "historical_flows"
+      ],
+      "endpointsCalled": [],
+      "creditCost": 0,
+      "remainingCredits": 1088,
+      "evidenceCount": 4,
+      "evidenceItems": [
+        {
+          "id": "evi_4d62447a-6b6f-46ba-bdfb-56e3036af728",
+          "capability": "token_information",
+          "summary": "Spot metadata for Bonk (BONK): price $0, market cap $332,242,864, 24h volume $2,895,230, holders 240,723."
+        },
+        {
+          "id": "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81",
+          "capability": "flow_intelligence",
+          "summary": "Cohort net flows: Smart Money/Top PnL $-712, Fresh Wallets $633,343, Exchanges $269,734, Whales $-120,730."
+        },
+        {
+          "id": "evi_3acf3ed6-4318-4afa-b1d7-fe150e008a87",
+          "capability": "who_bought_sold",
+          "summary": "Identified 10 top net buyers and 0 top net sellers. Top accumulator: FARTCOIN Whale."
+        },
+        {
+          "id": "evi_b444bb7a-6d87-4cb3-86c6-e7a95f438c7b",
+          "capability": "historical_flows",
+          "summary": "Retrieved 10 time-series flow records."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81"
+      ],
+      "observationsCount": 4,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 BONK — What changed recently?\n\nFresh-wallet and exchange activity are the clearest signals in the available data.\n\n• Fresh wallets: +$0.63M net flow\n• Exchanges: +$0.27M\n• Smart Money / Top PnL: -$0.00M\n• Whales: +$-0.12M\n\nThis points to substantial fresh-wallet inflows during the observed period, while the available whale cohort data does not show net movement.\n\nEvidence\n• Cohort net flows\n• Top buyer/seller data\n• BONK token metrics\n\nAsk another question about BONK.",
+      "errors": []
+    },
+    {
+      "input": "Show me the largest buyers.",
+      "tokenSymbol": "BONK",
+      "tokenAddress": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+      "chain": "solana",
+      "intent": "accumulation",
+      "selectedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "dex_trades"
+      ],
+      "plannedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "dex_trades"
+      ],
+      "endpointsCalled": [],
+      "creditCost": 0,
+      "remainingCredits": 1088,
+      "evidenceCount": 3,
+      "evidenceItems": [
+        {
+          "id": "evi_3acf3ed6-4318-4afa-b1d7-fe150e008a87",
+          "capability": "who_bought_sold",
+          "summary": "Identified 10 top net buyers and 0 top net sellers. Top accumulator: FARTCOIN Whale."
+        },
+        {
+          "id": "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81",
+          "capability": "flow_intelligence",
+          "summary": "Cohort net flows: Smart Money/Top PnL $-712, Fresh Wallets $633,343, Exchanges $269,734, Whales $-120,730."
+        },
+        {
+          "id": "evi_19baee12-5c4e-4b1c-91ba-f57ac42a0fcb",
+          "capability": "dex_trades",
+          "summary": "Retrieved 10 decentralized exchange swap events."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81"
+      ],
+      "observationsCount": 4,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 BONK — Show me the largest buyers.\n\nFresh-wallet and exchange activity are the clearest signals in the available data.\n\n• Fresh wallets: +$0.63M net flow\n• Exchanges: +$0.27M\n• Smart Money / Top PnL: -$0.00M\n• Whales: +$-0.12M\n\nThis points to substantial fresh-wallet inflows during the observed period, while the available whale cohort data does not show net movement.\n\nEvidence\n• Cohort net flows\n• Top buyer/seller data\n\nAsk another question about BONK.",
+      "errors": []
+    },
+    {
+      "input": "Show me the largest sellers.",
+      "tokenSymbol": "BONK",
+      "tokenAddress": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+      "chain": "solana",
+      "intent": "distribution",
+      "selectedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "token_transfers"
+      ],
+      "plannedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "token_transfers"
+      ],
+      "endpointsCalled": [],
+      "creditCost": 0,
+      "remainingCredits": 1088,
+      "evidenceCount": 3,
+      "evidenceItems": [
+        {
+          "id": "evi_3acf3ed6-4318-4afa-b1d7-fe150e008a87",
+          "capability": "who_bought_sold",
+          "summary": "Identified 10 top net buyers and 0 top net sellers. Top accumulator: FARTCOIN Whale."
+        },
+        {
+          "id": "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81",
+          "capability": "flow_intelligence",
+          "summary": "Cohort net flows: Smart Money/Top PnL $-712, Fresh Wallets $633,343, Exchanges $269,734, Whales $-120,730."
+        },
+        {
+          "id": "evi_c4d781c7-dea1-482b-a4ef-07318f78cd43",
+          "capability": "token_transfers",
+          "summary": "Retrieved 10 token transfer transactions."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81"
+      ],
+      "observationsCount": 4,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 BONK — Show me the largest sellers.\n\nFresh-wallet and exchange activity are the clearest signals in the available data.\n\n• Fresh wallets: +$0.63M net flow\n• Exchanges: +$0.27M\n• Smart Money / Top PnL: -$0.00M\n• Whales: +$-0.12M\n\nThis points to substantial fresh-wallet inflows during the observed period, while the available whale cohort data does not show net movement.\n\nEvidence\n• Cohort net flows\n• Top buyer/seller data\n• Large transaction transfers\n\nAsk another question about BONK.",
+      "errors": []
+    }
+  ],
+  "convResults": [
+    {
+      "input": "What's happening?",
+      "tokenSymbol": "BONK",
+      "tokenAddress": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+      "chain": "solana",
+      "intent": "activity_change",
+      "selectedCapabilities": [
+        "token_information",
+        "flow_intelligence",
+        "who_bought_sold",
+        "historical_flows"
+      ],
+      "plannedCapabilities": [
+        "token_information",
+        "flow_intelligence",
+        "who_bought_sold",
+        "historical_flows"
+      ],
+      "endpointsCalled": [],
+      "creditCost": 0,
+      "remainingCredits": 1088,
+      "evidenceCount": 4,
+      "evidenceItems": [
+        {
+          "id": "evi_4d62447a-6b6f-46ba-bdfb-56e3036af728",
+          "capability": "token_information",
+          "summary": "Spot metadata for Bonk (BONK): price $0, market cap $332,242,864, 24h volume $2,895,230, holders 240,723."
+        },
+        {
+          "id": "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81",
+          "capability": "flow_intelligence",
+          "summary": "Cohort net flows: Smart Money/Top PnL $-712, Fresh Wallets $633,343, Exchanges $269,734, Whales $-120,730."
+        },
+        {
+          "id": "evi_3acf3ed6-4318-4afa-b1d7-fe150e008a87",
+          "capability": "who_bought_sold",
+          "summary": "Identified 10 top net buyers and 0 top net sellers. Top accumulator: FARTCOIN Whale."
+        },
+        {
+          "id": "evi_b444bb7a-6d87-4cb3-86c6-e7a95f438c7b",
+          "capability": "historical_flows",
+          "summary": "Retrieved 10 time-series flow records."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81"
+      ],
+      "observationsCount": 4,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 BONK — What's happening?\n\nFresh-wallet and exchange activity are the clearest signals in the available data.\n\n• Fresh wallets: +$0.63M net flow\n• Exchanges: +$0.27M\n• Smart Money / Top PnL: -$0.00M\n• Whales: +$-0.12M\n\nThis points to substantial fresh-wallet inflows during the observed period, while the available whale cohort data does not show net movement.\n\nEvidence\n• Cohort net flows\n• Top buyer/seller data\n• BONK token metrics\n\nAsk another question about BONK.",
+      "errors": []
+    },
+    {
+      "input": "Who is buying?",
+      "tokenSymbol": "BONK",
+      "tokenAddress": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+      "chain": "solana",
+      "intent": "accumulation",
+      "selectedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "dex_trades"
+      ],
+      "plannedCapabilities": [
+        "who_bought_sold",
+        "flow_intelligence",
+        "dex_trades"
+      ],
+      "endpointsCalled": [],
+      "creditCost": 0,
+      "remainingCredits": 1088,
+      "evidenceCount": 3,
+      "evidenceItems": [
+        {
+          "id": "evi_3acf3ed6-4318-4afa-b1d7-fe150e008a87",
+          "capability": "who_bought_sold",
+          "summary": "Identified 10 top net buyers and 0 top net sellers. Top accumulator: FARTCOIN Whale."
+        },
+        {
+          "id": "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81",
+          "capability": "flow_intelligence",
+          "summary": "Cohort net flows: Smart Money/Top PnL $-712, Fresh Wallets $633,343, Exchanges $269,734, Whales $-120,730."
+        },
+        {
+          "id": "evi_19baee12-5c4e-4b1c-91ba-f57ac42a0fcb",
+          "capability": "dex_trades",
+          "summary": "Retrieved 10 decentralized exchange swap events."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81"
+      ],
+      "observationsCount": 4,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 BONK — Who is buying?\n\nFresh-wallet and exchange activity are the clearest signals in the available data.\n\n• Fresh wallets: +$0.63M net flow\n• Exchanges: +$0.27M\n• Smart Money / Top PnL: -$0.00M\n• Whales: +$-0.12M\n\nThis points to substantial fresh-wallet inflows during the observed period, while the available whale cohort data does not show net movement.\n\nEvidence\n• Cohort net flows\n• Top buyer/seller data\n\nAsk another question about BONK.",
+      "errors": []
+    },
+    {
+      "input": "Are they whales?",
+      "tokenSymbol": "BONK",
+      "tokenAddress": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+      "chain": "solana",
+      "intent": "flow_analysis",
+      "selectedCapabilities": [
+        "flow_intelligence",
+        "historical_flows"
+      ],
+      "plannedCapabilities": [
+        "flow_intelligence",
+        "historical_flows"
+      ],
+      "endpointsCalled": [],
+      "creditCost": 0,
+      "remainingCredits": 1088,
+      "evidenceCount": 2,
+      "evidenceItems": [
+        {
+          "id": "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81",
+          "capability": "flow_intelligence",
+          "summary": "Cohort net flows: Smart Money/Top PnL $-712, Fresh Wallets $633,343, Exchanges $269,734, Whales $-120,730."
+        },
+        {
+          "id": "evi_b444bb7a-6d87-4cb3-86c6-e7a95f438c7b",
+          "capability": "historical_flows",
+          "summary": "Retrieved 10 time-series flow records."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81"
+      ],
+      "observationsCount": 4,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 BONK — Are they whales?\n\nFresh-wallet and exchange activity are the clearest signals in the available data.\n\n• Fresh wallets: +$0.63M net flow\n• Exchanges: +$0.27M\n• Smart Money / Top PnL: -$0.00M\n• Whales: +$-0.12M\n\nThis points to substantial fresh-wallet inflows during the observed period, while the available whale cohort data does not show net movement.\n\nEvidence\n• Cohort net flows\n\nAsk another question about BONK.",
+      "errors": []
+    },
+    {
+      "input": "Why?",
+      "tokenSymbol": "BONK",
+      "tokenAddress": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263",
+      "chain": "solana",
+      "intent": "activity_change",
+      "selectedCapabilities": [
+        "token_information",
+        "flow_intelligence",
+        "who_bought_sold",
+        "historical_flows"
+      ],
+      "plannedCapabilities": [
+        "token_information",
+        "flow_intelligence",
+        "who_bought_sold",
+        "historical_flows"
+      ],
+      "endpointsCalled": [],
+      "creditCost": 0,
+      "remainingCredits": 1088,
+      "evidenceCount": 4,
+      "evidenceItems": [
+        {
+          "id": "evi_4d62447a-6b6f-46ba-bdfb-56e3036af728",
+          "capability": "token_information",
+          "summary": "Spot metadata for Bonk (BONK): price $0, market cap $332,242,864, 24h volume $2,895,230, holders 240,723."
+        },
+        {
+          "id": "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81",
+          "capability": "flow_intelligence",
+          "summary": "Cohort net flows: Smart Money/Top PnL $-712, Fresh Wallets $633,343, Exchanges $269,734, Whales $-120,730."
+        },
+        {
+          "id": "evi_3acf3ed6-4318-4afa-b1d7-fe150e008a87",
+          "capability": "who_bought_sold",
+          "summary": "Identified 10 top net buyers and 0 top net sellers. Top accumulator: FARTCOIN Whale."
+        },
+        {
+          "id": "evi_b444bb7a-6d87-4cb3-86c6-e7a95f438c7b",
+          "capability": "historical_flows",
+          "summary": "Retrieved 10 time-series flow records."
+        }
+      ],
+      "evidenceRefs": [
+        "evi_7e9ca36a-8853-4e29-b3a1-b0a7f9ec3c81"
+      ],
+      "observationsCount": 4,
+      "hasCausalViolation": false,
+      "unsupportedClaimsCount": 0,
+      "turnStatus": "completed",
+      "isGrounded": true,
+      "clarificationRequired": false,
+      "formattedTelegramResponse": "🔎 BONK — Why?\n\nFresh-wallet and exchange activity are the clearest signals in the available data.\n\n• Fresh wallets: +$0.63M net flow\n• Exchanges: +$0.27M\n• Smart Money / Top PnL: -$0.00M\n• Whales: +$-0.12M\n\nThis points to substantial fresh-wallet inflows during the observed period, while the available whale cohort data does not show net movement.\n\nEvidence\n• Cohort net flows\n• Top buyer/seller data\n• BONK token metrics\n\nAsk another question about BONK.",
+      "errors": []
+    }
+  ]
+}
