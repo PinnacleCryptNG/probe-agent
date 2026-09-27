@@ -50,8 +50,15 @@ export class ProbeTelegramBot {
   }
 
   private registerCommands(): void {
-    // /start - Welcome & token-first onboarding prompt (no buttons)
+    // /start - Welcome & on-chain desk onboarding prompt (no buttons)
     this.bot.command('start', async (ctx: Context) => {
+      const chatId = ctx.chat?.id;
+      if (chatId) {
+        this.investigationManager.clearPendingClarification(chatId);
+        if ('clearPendingResolution' in this.targetResolver && typeof (this.targetResolver as any).clearPendingResolution === 'function') {
+          (this.targetResolver as any).clearPendingResolution(chatId);
+        }
+      }
       await ctx.reply(TelegramMessages.welcome());
     });
 
@@ -67,6 +74,10 @@ export class ProbeTelegramBot {
       const chatId = ctx.chat?.id;
       if (chatId) {
         this.investigationManager.clearActiveInvestigation(chatId);
+        this.investigationManager.clearPendingClarification(chatId);
+        if ('clearPendingResolution' in this.targetResolver && typeof (this.targetResolver as any).clearPendingResolution === 'function') {
+          (this.targetResolver as any).clearPendingResolution(chatId);
+        }
       }
       await ctx.reply(TelegramMessages.newInvestigation());
     });
@@ -150,11 +161,14 @@ export class ProbeTelegramBot {
           ? { type: 'token', token: activeInv.token, chain: activeInv.token.chain, rawIdentifier: activeInv.token.symbol }
           : undefined);
 
+      const pendingClarification = this.investigationManager.getPendingClarification(chatId);
       const tTokenStart = Date.now();
       const resolution = await this.targetResolver.resolve({
         question: trimmed,
         existingTarget,
         chatId,
+        defaultChain: pendingClarification?.selectedChain || existingTarget?.chain,
+        pendingResolution: pendingClarification,
       });
       const tTokenEnd = Date.now();
       profiler.recordStage('2. Target resolution', tTokenStart, tTokenEnd, {
@@ -163,6 +177,12 @@ export class ProbeTelegramBot {
       });
 
       if (resolution.status === 'AMBIGUOUS') {
+        if (resolution.candidateIdentifier) {
+          this.investigationManager.setPendingClarification(chatId, {
+            type: 'token',
+            symbol: resolution.candidateIdentifier,
+          });
+        }
         await ctx.reply(
           resolution.clarificationMessage ??
             TelegramMessages.ambiguousSymbol(
@@ -196,6 +216,13 @@ export class ProbeTelegramBot {
       const isStandaloneChain = target.type === 'chain' && !isQuestion && (words.length <= 2 || detectChainOnlyInput(trimmed) !== undefined);
 
       if (isStandaloneChain && target.type === 'chain') {
+        const pending = this.investigationManager.getPendingClarification(chatId);
+        if (pending && pending.type === 'token') {
+          this.investigationManager.setPendingClarification(chatId, {
+            ...pending,
+            selectedChain: target.chain,
+          });
+        }
         this.investigationManager.clearActiveInvestigation(chatId);
         this.investigationManager.createInvestigation({
           telegramChatId: chatId,
@@ -211,6 +238,7 @@ export class ProbeTelegramBot {
       const isStandaloneToken = target.type === 'token' && isOnlyTokenInput(trimmed, tokenCandidate);
 
       if (isStandaloneToken && target.type === 'token') {
+        this.investigationManager.clearPendingClarification(chatId);
         this.investigationManager.clearActiveInvestigation(chatId);
         this.investigationManager.createInvestigation({
           telegramChatId: chatId,
@@ -230,6 +258,7 @@ export class ProbeTelegramBot {
       }
 
       // 4. Investigation question turn
+      this.investigationManager.clearPendingClarification(chatId);
       let investigationId = activeInv?.id;
       const effectiveToken = target.type === 'token' ? target.token : undefined;
 

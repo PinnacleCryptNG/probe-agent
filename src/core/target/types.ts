@@ -48,11 +48,18 @@ export interface UnresolvedTargetResult {
 
 export type TargetResolutionResult = ResolvedTargetResult | UnresolvedTargetResult;
 
+export interface PendingResolutionContext {
+  type: 'token';
+  symbol: string;
+  selectedChain?: string;
+}
+
 export interface TargetResolverOptions {
   question: string;
   existingTarget?: InvestigationTarget;
   chatId?: number | string;
   defaultChain?: string;
+  pendingResolution?: PendingResolutionContext;
 }
 
 export interface ITargetResolver {

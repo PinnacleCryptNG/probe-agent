@@ -3,14 +3,16 @@ export const TelegramMessages = {
     return [
       '🔎 PROBE',
       '',
-      'Investigate on-chain activity using evidence from the chain.',
+      'Evidence-first on-chain investigation.',
       '',
-      'Send me a token symbol or contract address.',
+      'Investigate chains, tokens, wallets, flows and transactions.',
       '',
-      'Examples:',
-      '• ETH',
-      '• SOL',
-      '• 0x...',
+      'Try:',
+      "• What's happening on Ethereum?",
+      '• Who are the biggest whales on Solana?',
+      '• Investigate $PEPE',
+      '• Who is buying ETH?',
+      '• Show me the biggest transactions this week.',
     ].join('\n');
   },
 

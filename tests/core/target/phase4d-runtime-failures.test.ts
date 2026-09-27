@@ -359,4 +359,202 @@ describe('Phase 4D — Runtime Failures Regression Test Suite', () => {
       expect(mockSynthesizer.synthesize).not.toHaveBeenCalled();
     });
   });
+
+  // ==================================================
+  // 5. MULTI-TURN CHAIN CLARIFICATION & CONTEXT PROPAGATION (PART 7)
+  // ==================================================
+  describe('5. Multi-Turn Chain Clarification & Context Propagation (PART 7)', () => {
+    let multiTurnNansenClient: INansenClient;
+    let multiTurnTargetResolver: TargetResolver;
+
+    beforeEach(() => {
+      multiTurnNansenClient = {
+        searchGeneral: vi.fn().mockImplementation(async (req: any) => {
+          const query = typeof req === 'string' ? req : (req.search_query ?? req.query ?? '');
+          const q = String(query).trim().toUpperCase();
+          if (q === 'PEPE') {
+            // Live Nansen reality: competing market caps on Ethereum and BNB make it ambiguous without chain filter
+            return {
+              data: {
+                tokens: [
+                  {
+                    name: 'Pepe',
+                    symbol: 'PEPE',
+                    chain: 'ethereum',
+                    address: '0x6982508145454ce325ddbe47a25d4ec3d2311933',
+                    marketCapUsd: 1829199877,
+                    volume24hUsd: 1259214,
+                  },
+                  {
+                    name: 'Pepe',
+                    symbol: 'PEPE',
+                    chain: 'bnb',
+                    address: '0x25d887ce7a35172c62febfd67a1856620adf2bb1',
+                    marketCapUsd: 1821401459,
+                    volume24hUsd: 23954,
+                  },
+                  {
+                    name: 'Pepe',
+                    symbol: 'PEPE',
+                    chain: 'solana',
+                    address: 'So11111111111111111111111111111111111111111',
+                    marketCapUsd: 500000,
+                    volume24hUsd: 10000,
+                  },
+                  {
+                    name: 'Pepe',
+                    symbol: 'PEPE',
+                    chain: 'base',
+                    address: '0xbasepepe12345',
+                    marketCapUsd: 100000,
+                    volume24hUsd: 1000,
+                  },
+                ],
+              },
+              meta: { creditsCost: 0, creditsUsed: 0, creditsRemaining: 1000, durationMs: 5 },
+            };
+          }
+          return { data: { tokens: [] }, meta: { creditsCost: 0, creditsUsed: 0, creditsRemaining: 1000, durationMs: 5 } };
+        }),
+      } as unknown as INansenClient;
+
+      const resolver = new TokenResolver({ nansenClient: multiTurnNansenClient });
+      multiTurnTargetResolver = new TargetResolver(resolver);
+    });
+
+    it('handles the EXACT multi-turn failure sequence: $PEPE -> Ethereum -> PEPE without re-asking Which chain?', async () => {
+      const chatId = 99901;
+
+      // Turn 1: User sends $PEPE -> ambiguous clarification
+      const turn1 = await multiTurnTargetResolver.resolve({
+        question: '$PEPE',
+        chatId,
+      });
+      expect(turn1.status).toBe('AMBIGUOUS');
+      expect(turn1.candidateIdentifier).toBe('PEPE');
+      expect(turn1.availableChains).toContain('Ethereum');
+      expect(turn1.availableChains).toContain('Bnb');
+
+      // Verify pending resolution was stored for chat
+      const pendingTurn1 = multiTurnTargetResolver.getPendingResolution(chatId);
+      expect(pendingTurn1).toBeDefined();
+      expect(pendingTurn1?.symbol).toBe('PEPE');
+
+      // Turn 2: User sends Ethereum -> pending PEPE + Ethereum context
+      const turn2 = await multiTurnTargetResolver.resolve({
+        question: 'Ethereum',
+        chatId,
+      });
+      expect(turn2.status).toBe('RESOLVED');
+      expect(turn2.target.type).toBe('chain');
+      expect(turn2.target.chain).toBe('ethereum');
+
+      const pendingTurn2 = multiTurnTargetResolver.getPendingResolution(chatId);
+      expect(pendingTurn2).toBeDefined();
+      expect(pendingTurn2?.symbol).toBe('PEPE');
+      expect(pendingTurn2?.selectedChain).toBe('ethereum');
+
+      // Turn 3: User sends PEPE -> resolves PEPE on Ethereum (MUST NOT ask Which chain? again)
+      const turn3 = await multiTurnTargetResolver.resolve({
+        question: 'PEPE',
+        chatId,
+        existingTarget: turn2.target,
+      });
+
+      expect(turn3.status).toBe('RESOLVED');
+      expect(turn3.target.type).toBe('token');
+      const token = (turn3.target as TokenTarget).token;
+      expect(token.symbol).toBe('PEPE');
+      expect(token.chain).toBe('ethereum');
+      expect(token.address).toBe('0x6982508145454ce325ddbe47a25d4ec3d2311933');
+      expect(turn3.target.explicitChain).toBe('ethereum');
+
+      // Pending clarification cleared after successful resolution
+      expect(multiTurnTargetResolver.getPendingResolution(chatId)).toBeUndefined();
+    });
+
+    it('resolves $PEPE with explicit Ethereum context (defaultChain: ethereum) directly to PEPE/Ethereum', async () => {
+      const res = await multiTurnTargetResolver.resolve({
+        question: '$PEPE',
+        defaultChain: 'ethereum',
+      });
+
+      expect(res.status).toBe('RESOLVED');
+      expect(res.target.type).toBe('token');
+      const token = (res.target as TokenTarget).token;
+      expect(token.symbol).toBe('PEPE');
+      expect(token.chain).toBe('ethereum');
+      expect(token.address).toBe('0x6982508145454ce325ddbe47a25d4ec3d2311933');
+    });
+
+    it('resolves "$PEPE on Ethereum" directly to PEPE/Ethereum', async () => {
+      const res = await multiTurnTargetResolver.resolve({
+        question: '$PEPE on Ethereum',
+      });
+
+      expect(res.status).toBe('RESOLVED');
+      expect(res.target.type).toBe('token');
+      const token = (res.target as TokenTarget).token;
+      expect(token.symbol).toBe('PEPE');
+      expect(token.chain).toBe('ethereum');
+      expect(token.address).toBe('0x6982508145454ce325ddbe47a25d4ec3d2311933');
+    });
+
+    it('resolves "PEPE on Ethereum" directly to PEPE/Ethereum', async () => {
+      const res = await multiTurnTargetResolver.resolve({
+        question: 'PEPE on Ethereum',
+      });
+
+      expect(res.status).toBe('RESOLVED');
+      expect(res.target.type).toBe('token');
+      const token = (res.target as TokenTarget).token;
+      expect(token.symbol).toBe('PEPE');
+      expect(token.chain).toBe('ethereum');
+      expect(token.address).toBe('0x6982508145454ce325ddbe47a25d4ec3d2311933');
+    });
+
+    it('with active ETH, "What about $PEPE?" explicitly switches to PEPE while preserving/resolving its correct Ethereum chain', async () => {
+      const activeEth = await multiTurnTargetResolver.resolve({ question: 'ETH' });
+      expect(activeEth.target.type).toBe('token');
+      expect((activeEth.target as TokenTarget).token.symbol).toBe('ETH');
+      expect((activeEth.target as TokenTarget).token.chain).toBe('ethereum');
+
+      const switchRes = await multiTurnTargetResolver.resolve({
+        question: 'What about $PEPE?',
+        existingTarget: activeEth.target,
+      });
+
+      expect(switchRes.status).toBe('RESOLVED');
+      expect(switchRes.target.type).toBe('token');
+      const token = (switchRes.target as TokenTarget).token;
+      expect(token.symbol).toBe('PEPE');
+      expect(token.chain).toBe('ethereum');
+      expect(token.address).toBe('0x6982508145454ce325ddbe47a25d4ec3d2311933');
+    });
+
+    it('preserves native assets without routing through Nansen search: HYPE, SOL, APT, ETH', async () => {
+      const hype = await multiTurnTargetResolver.resolve({ question: 'HYPE' });
+      expect(hype.status).toBe('RESOLVED');
+      expect((hype.target as TokenTarget).token.symbol).toBe('HYPE');
+      expect((hype.target as TokenTarget).chain).toBe('hyperliquid');
+
+      const sol = await multiTurnTargetResolver.resolve({ question: '$SOL' });
+      expect(sol.status).toBe('RESOLVED');
+      expect((sol.target as TokenTarget).token.symbol).toBe('SOL');
+      expect((sol.target as TokenTarget).chain).toBe('solana');
+
+      const apt = await multiTurnTargetResolver.resolve({ question: 'APT' });
+      expect(apt.status).toBe('RESOLVED');
+      expect((apt.target as TokenTarget).token.symbol).toBe('APT');
+      expect((apt.target as TokenTarget).chain).toBe('aptos');
+
+      const eth = await multiTurnTargetResolver.resolve({ question: '$ETH' });
+      expect(eth.status).toBe('RESOLVED');
+      expect((eth.target as TokenTarget).token.symbol).toBe('ETH');
+      expect((eth.target as TokenTarget).chain).toBe('ethereum');
+
+      // None of the native assets called searchGeneral
+      expect(multiTurnNansenClient.searchGeneral).not.toHaveBeenCalled();
+    });
+  });
 });

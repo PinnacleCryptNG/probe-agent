@@ -21,9 +21,35 @@ export interface CreateInvestigationParams {
   initialQuestion?: string;
 }
 
+export interface PendingClarification {
+  type: 'token';
+  symbol: string;
+  selectedChain?: string;
+  timestamp: string;
+}
+
 export class InvestigationManager {
   private investigations = new Map<string, Investigation>();
   private activeByChatId = new Map<string, string>();
+  private pendingClarifications = new Map<string, PendingClarification>();
+
+  public setPendingClarification(
+    chatId: number | string,
+    clarification: { type: 'token'; symbol: string; selectedChain?: string }
+  ): void {
+    this.pendingClarifications.set(String(chatId), {
+      ...clarification,
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  public getPendingClarification(chatId: number | string): PendingClarification | undefined {
+    return this.pendingClarifications.get(String(chatId));
+  }
+
+  public clearPendingClarification(chatId: number | string): void {
+    this.pendingClarifications.delete(String(chatId));
+  }
 
   /**
    * Initializes a new investigation instance for a resolved target (token, chain, or wallet).

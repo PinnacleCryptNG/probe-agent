@@ -10,6 +10,9 @@ import { ProbeTelegramBot } from '../../../src/adapters/telegram/bot.js';
 import { InvestigationManager } from '../../../src/core/investigation/manager.js';
 import { InvestigationOrchestrator } from '../../../src/core/investigation/orchestrator.js';
 import { InvestigationTurnResult } from '../../../src/core/investigation/types.js';
+import { TargetResolver } from '../../../src/core/target/target-resolver.js';
+import { TokenResolver } from '../../../src/core/token/resolver.js';
+import { INansenClient } from '../../../src/core/nansen/client.js';
 
 const MOCK_BOT_INFO: UserFromGetMe = {
   id: 999999,
@@ -142,11 +145,12 @@ describe('Telegram Adapter Integration (Phase 3A)', () => {
     expect(sentMessages).toHaveLength(1);
     const reply = sentMessages[0];
     expect(reply.text).toContain('🔎 PROBE');
-    expect(reply.text).toContain('Investigate on-chain activity using evidence from the chain.');
-    expect(reply.text).toContain('Send me a token symbol or contract address.');
-    expect(reply.text).toContain('• ETH');
-    expect(reply.text).toContain('• SOL');
-    expect(reply.text).toContain('• 0x...');
+    expect(reply.text).toContain('Evidence-first on-chain investigation.');
+    expect(reply.text).toContain('Investigate chains, tokens, wallets, flows and transactions.');
+    expect(reply.text).toContain("• What's happening on Ethereum?");
+    expect(reply.text).toContain('• Who are the biggest whales on Solana?');
+    expect(reply.text).toContain('• Investigate $PEPE');
+    expect(reply.text).not.toContain('Send me a token symbol or contract address.');
     expect(reply.options?.reply_markup).toBeUndefined();
   });
 
@@ -1325,6 +1329,127 @@ describe('Investigation UX Simplification & Grounded Evidence Tests', () => {
     // Bot depends strictly on orchestrator and investigationManager
     expect((probeBot as any).orchestrator).toBeDefined();
     expect((probeBot as any).investigationManager).toBeDefined();
+  });
+
+  // Requirement 11: Multi-turn chain clarification handles $PEPE -> Ethereum -> PEPE sequence
+  it('11. handles $PEPE -> Ethereum -> PEPE multi-turn clarification without asking Which chain? again', async () => {
+    const mockNansen = {
+      searchGeneral: vi.fn().mockImplementation(async (req: any) => {
+        const query = typeof req === 'string' ? req : (req.search_query ?? req.query ?? '');
+        const q = String(query).trim().toUpperCase();
+        if (q === 'PEPE') {
+          return {
+            data: {
+              tokens: [
+                {
+                  name: 'Pepe',
+                  symbol: 'PEPE',
+                  chain: 'ethereum',
+                  address: '0x6982508145454ce325ddbe47a25d4ec3d2311933',
+                  marketCapUsd: 1829199877,
+                  volume24hUsd: 1259214,
+                },
+                {
+                  name: 'Pepe',
+                  symbol: 'PEPE',
+                  chain: 'bnb',
+                  address: '0x25d887ce7a35172c62febfd67a1856620adf2bb1',
+                  marketCapUsd: 1821401459,
+                  volume24hUsd: 23954,
+                },
+              ],
+            },
+            meta: { creditsCost: 0, creditsUsed: 0, creditsRemaining: 1000, durationMs: 5 },
+          };
+        }
+        return { data: { tokens: [] }, meta: { creditsCost: 0, creditsUsed: 0, creditsRemaining: 1000, durationMs: 5 } };
+      }),
+    } as unknown as INansenClient;
+
+    const tResolver = new TokenResolver({ nansenClient: mockNansen });
+    const targetResolver = new TargetResolver(tResolver);
+
+    const testBot = new ProbeTelegramBot({
+      botToken: 'dummy_token_12345:ABC-DEF1234ghIkl-zyx57W2v1u123ew11',
+      orchestrator: orchestratorMock,
+      investigationManager: manager,
+      targetResolver,
+    });
+
+    const bot = testBot.getBot();
+    bot.botInfo = MOCK_BOT_INFO;
+
+    const testMessages: string[] = [];
+    bot.api.config.use(async (_prev, method, payload) => {
+      if (method === 'sendMessage') {
+        const p = payload as { chat_id: number | string; text: string };
+        testMessages.push(p.text);
+        return {
+          ok: true,
+          result: {
+            message_id: testMessages.length,
+            date: Math.floor(Date.now() / 1000),
+            chat: { id: Number(p.chat_id), type: 'private' },
+            text: p.text,
+          },
+        } as never;
+      }
+      return { ok: true, result: {} } as never;
+    });
+
+    const chatId = 888123;
+
+    // Turn 1: $PEPE -> Which chain?
+    await bot.handleUpdate({
+      update_id: 1001,
+      message: {
+        message_id: 1,
+        date: Math.floor(Date.now() / 1000),
+        chat: { id: chatId, type: 'private' },
+        from: { id: chatId, is_bot: false, first_name: 'Tester' },
+        text: '$PEPE',
+      },
+    });
+
+    expect(testMessages).toHaveLength(1);
+    expect(testMessages[0]).toContain('Which chain?');
+    expect(testMessages[0]).toContain('Ethereum');
+    expect(testMessages[0]).toContain('Bnb');
+
+    // Turn 2: Ethereum -> Which token on Ethereum?
+    await bot.handleUpdate({
+      update_id: 1002,
+      message: {
+        message_id: 2,
+        date: Math.floor(Date.now() / 1000),
+        chat: { id: chatId, type: 'private' },
+        from: { id: chatId, is_bot: false, first_name: 'Tester' },
+        text: 'Ethereum',
+      },
+    });
+
+    expect(testMessages).toHaveLength(2);
+    expect(testMessages[1]).toContain('Which token on Ethereum?');
+
+    // Turn 3: PEPE -> resolves PEPE on Ethereum and does NOT ask Which chain? again
+    await bot.handleUpdate({
+      update_id: 1003,
+      message: {
+        message_id: 3,
+        date: Math.floor(Date.now() / 1000),
+        chat: { id: chatId, type: 'private' },
+        from: { id: chatId, is_bot: false, first_name: 'Tester' },
+        text: 'PEPE',
+      },
+    });
+
+    expect(testMessages).toHaveLength(3);
+    expect(testMessages[2]).not.toContain('Which chain?');
+    expect(testMessages[2]).toContain('🔎 PEPE');
+    // Active investigation should have PEPE on ethereum
+    const active = manager.getActiveInvestigationByChatId(chatId);
+    expect(active?.token?.symbol).toBe('PEPE');
+    expect(active?.token?.chain).toBe('ethereum');
   });
 });
 

@@ -78,6 +78,7 @@ const WALLET_CONTEXT_KEYWORDS = [
 
 export class TargetResolver implements ITargetResolver {
   private readonly tokenResolver: ITokenResolver;
+  private pendingByChatId = new Map<string, { type: 'token'; symbol: string; selectedChain?: string; timestamp: number }>();
 
   constructor(deps?: ITokenResolver | { tokenResolver?: ITokenResolver }) {
     if (deps && 'tokenResolver' in deps) {
@@ -85,6 +86,26 @@ export class TargetResolver implements ITargetResolver {
     } else {
       this.tokenResolver = (deps as ITokenResolver) ?? defaultTokenResolver;
     }
+  }
+
+  public setPendingResolution(
+    chatId: number | string,
+    pending: { type: 'token'; symbol: string; selectedChain?: string }
+  ): void {
+    this.pendingByChatId.set(String(chatId), {
+      ...pending,
+      timestamp: Date.now(),
+    });
+  }
+
+  public getPendingResolution(
+    chatId: number | string
+  ): { type: 'token'; symbol: string; selectedChain?: string; timestamp: number } | undefined {
+    return this.pendingByChatId.get(String(chatId));
+  }
+
+  public clearPendingResolution(chatId: number | string): void {
+    this.pendingByChatId.delete(String(chatId));
   }
 
   private async resolveCandidate(candidate: TokenCandidate): Promise<TokenResolutionResult> {
@@ -121,6 +142,10 @@ export class TargetResolver implements ITargetResolver {
    */
   public async resolve(options: TargetResolverOptions): Promise<TargetResolutionResult> {
     const question = options.question.trim();
+    const chatIdKey = options.chatId !== undefined ? String(options.chatId) : undefined;
+    const pendingFromMemory = chatIdKey ? this.getPendingResolution(chatIdKey) : undefined;
+    const pendingContext = options.pendingResolution ?? pendingFromMemory;
+
     if (!question) {
       if (options.existingTarget) {
         return {
@@ -140,6 +165,12 @@ export class TargetResolver implements ITargetResolver {
     const chainOnly = detectChainOnlyInput(question);
     if (chainOnly) {
       const canonicalChain = normalizeChain(chainOnly) || chainOnly.toLowerCase();
+      if (chatIdKey && pendingContext && pendingContext.type === 'token') {
+        this.setPendingResolution(chatIdKey, {
+          ...pendingContext,
+          selectedChain: canonicalChain,
+        });
+      }
       const chainTarget: InvestigationTarget = {
         type: 'chain',
         chain: canonicalChain,
@@ -156,7 +187,15 @@ export class TargetResolver implements ITargetResolver {
 
     // Step 1: Extract explicit chain context if mentioned ("on Ethereum", "on Solana", etc.)
     const explicitChainInfo = extractExplicitChain(question);
-    const targetChain = explicitChainInfo?.chain || options.defaultChain;
+    const pendingChain = options.pendingResolution?.selectedChain || (chatIdKey ? this.getPendingResolution(chatIdKey)?.selectedChain : undefined);
+    const contextChain =
+      options.defaultChain ||
+      pendingChain ||
+      (options.existingTarget?.type === 'chain'
+        ? options.existingTarget.chain
+        : options.existingTarget?.chain);
+
+    const targetChain = explicitChainInfo?.chain || contextChain;
 
     // Text with the explicit chain clause masked to prevent chain words from being misidentified as tokens
     let textWithoutChain = question;
@@ -204,6 +243,9 @@ export class TargetResolver implements ITargetResolver {
           getNativeAssetForChain(explicitChainInfo.chain)?.ticker !== native.ticker;
 
         if (!isCrossChainToken) {
+          if (chatIdKey) {
+            this.clearPendingResolution(chatIdKey);
+          }
           const tokenTarget: InvestigationTarget = {
             type: 'token',
             token: {
@@ -280,12 +322,15 @@ export class TargetResolver implements ITargetResolver {
           : null;
 
       if (detailed.status === 'RESOLVED' && detailed.token) {
+        if (chatIdKey) {
+          this.clearPendingResolution(chatIdKey);
+        }
         const tokenTarget: InvestigationTarget = {
           type: 'token',
           token: detailed.token,
           chain: detailed.token.chain,
           rawIdentifier: tokenCandidate.identifier,
-          explicitChain: explicitChainInfo?.chain,
+          explicitChain: explicitChainInfo?.chain || targetChain,
         };
 
         logger.debug('Target resolution trace', {
@@ -326,6 +371,12 @@ export class TargetResolver implements ITargetResolver {
       });
 
       if (detailed.status === 'AMBIGUOUS_SYMBOL') {
+        if (chatIdKey) {
+          this.setPendingResolution(chatIdKey, {
+            type: 'token',
+            symbol: tokenCandidate.identifier,
+          });
+        }
         const chains = detailed.availableChains ?? [];
         return {
           status: 'AMBIGUOUS',
@@ -376,6 +427,12 @@ export class TargetResolver implements ITargetResolver {
     // Check standalone chain input without "on" (e.g. user simply typed "solana", "base", "ethereum")
     const standaloneChain = normalizeChain(question);
     if (standaloneChain) {
+      if (chatIdKey && pendingContext && pendingContext.type === 'token') {
+        this.setPendingResolution(chatIdKey, {
+          ...pendingContext,
+          selectedChain: standaloneChain,
+        });
+      }
       const displayName = getChainDisplayName(standaloneChain);
       const chainTarget: InvestigationTarget = {
         type: 'chain',
