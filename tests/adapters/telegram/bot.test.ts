@@ -262,7 +262,7 @@ describe('Telegram Adapter Integration (Phase 3A)', () => {
 
     const reply = sentMessages[0];
     expect(reply.text).toContain('🔎 ETH');
-    expect(reply.text).toContain('What do you want to investigate?');
+    expect(reply.text).toMatch(/What (?:would|do) you (?:like|want) to investigate\?/);
     expect(reply.text).toContain('Or ask me anything.');
     expect(reply.options?.reply_markup).toBeDefined();
 

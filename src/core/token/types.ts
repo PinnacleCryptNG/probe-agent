@@ -20,6 +20,8 @@ export interface TokenResolutionResult {
   candidate?: TokenCandidate;
   detectedChain?: string;
   availableChains?: string[];
+  candidates?: Array<Record<string, unknown>>;
+  ambiguityReason?: string;
   failureReason?: string;
   creditCost: number;
 }

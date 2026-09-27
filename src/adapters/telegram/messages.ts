@@ -38,11 +38,13 @@ export const TelegramMessages = {
     ].join('\n');
   },
 
-  tokenSelected(symbol: string): string {
+  tokenSelected(symbol: string, chainDisplayName?: string, isNative?: boolean): string {
+    const header = isNative && chainDisplayName ? `🔎 ${symbol} · ${chainDisplayName}` : `🔎 ${symbol}`;
+    const question = isNative ? 'What would you like to investigate?' : 'What do you want to investigate?';
     return [
-      `🔎 ${symbol}`,
+      header,
       '',
-      'What do you want to investigate?',
+      question,
       '',
       'Or ask me anything.',
     ].join('\n');

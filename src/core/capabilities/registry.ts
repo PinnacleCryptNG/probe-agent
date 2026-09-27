@@ -86,6 +86,8 @@ export const TokenTransfersInputSchema = z.object({
       per_page: z.number().int().min(1).max(100).default(25),
     })
     .optional(),
+  timeframe: z.string().optional(),
+  time_window: z.string().optional(),
 });
 
 export const DexTradesInputSchema = z.object({
@@ -103,6 +105,8 @@ export const DexTradesInputSchema = z.object({
       per_page: z.number().int().min(1).max(100).default(25),
     })
     .optional(),
+  timeframe: z.string().optional(),
+  time_window: z.string().optional(),
 });
 
 export const HistoricalFlowsInputSchema = z.object({

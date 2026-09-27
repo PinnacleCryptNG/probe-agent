@@ -146,6 +146,7 @@ export class TokenResolver implements ITokenResolver {
               token: result.token,
               candidate,
               detectedChain: result.token.chain,
+              candidates: result.candidates,
               creditCost: accumulatedCredits,
             };
           }
@@ -155,6 +156,8 @@ export class TokenResolver implements ITokenResolver {
               status: 'AMBIGUOUS_SYMBOL',
               candidate,
               availableChains: result.availableChains,
+              candidates: result.candidates,
+              ambiguityReason: result.ambiguityReason,
               failureReason: 'MULTIPLE_CHAINS_FOR_SYMBOL',
               creditCost: accumulatedCredits,
             };

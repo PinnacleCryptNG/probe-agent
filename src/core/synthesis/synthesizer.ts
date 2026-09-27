@@ -62,26 +62,49 @@ export function deriveEvidenceCategories(evidence: EvidenceItem[], symbol = 'ETH
 }
 
 export function formatTransferItem(t: any, sym: string): string {
-  const usdVal = Number(t.amount_usd ?? t.amountUsd ?? t.transfer_value_usd ?? t.usd_value ?? 0);
-  const rawAmt = t.transfer_amount ?? t.amount;
+  const rawUsd = t.usdValue ?? t.amount_usd ?? t.amountUsd ?? t.transfer_value_usd ?? t.usd_value;
+  const usdVal = typeof rawUsd === 'number' ? rawUsd : (rawUsd ? parseFloat(String(rawUsd)) : 0);
+
+  const rawAmt = t.amount ?? t.transfer_amount;
   const numAmt = typeof rawAmt === 'number' ? rawAmt : (rawAmt ? parseFloat(String(rawAmt)) : 0);
 
-  const from = t.from_label || t.fromLabel || t.from_address_label || t.fromAddressLabel || truncateAddress(t.from_address || t.fromAddress || t.from || '');
-  const to = t.to_label || t.toLabel || t.to_address_label || t.toAddressLabel || truncateAddress(t.to_address || t.toAddress || t.to || '');
+  const from =
+    t.fromLabel ||
+    t.from_label ||
+    t.from_address_label ||
+    t.fromAddressLabel ||
+    truncateAddress(t.fromAddress || t.from_address || t.from || '');
 
-  let amtStr = '';
-  if (numAmt > 0) {
-    amtStr = `${numAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${sym}`;
-  }
+  const to =
+    t.toLabel ||
+    t.to_label ||
+    t.to_address_label ||
+    t.toAddressLabel ||
+    truncateAddress(t.toAddress || t.to_address || t.to || '');
 
+  const hash = t.transactionHash || t.transaction_hash || t.hash || t.tx_hash;
+  const shortHash = hash ? (hash.length > 14 ? `${hash.slice(0, 8)}...${hash.slice(-6)}` : hash) : undefined;
+  const timestamp = t.timestamp || t.block_timestamp;
+  const timeFormatted = timestamp ? timestamp.slice(0, 19).replace('T', ' ') : undefined;
+
+  let valStr = '';
   if (usdVal > 0) {
     const usdStr = formatFlowUsd(usdVal, false);
-    return amtStr ? `${amtStr} (${usdStr}) from ${from} to ${to}` : `${usdStr} from ${from} to ${to}`;
-  } else if (amtStr) {
-    return `${amtStr} from ${from} to ${to}`;
+    const amtStr = numAmt > 0
+      ? `${numAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${sym}`
+      : '';
+    valStr = amtStr ? `${amtStr} (${usdStr})` : usdStr;
+  } else if (numAmt > 0) {
+    valStr = `${numAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${sym} (ranked by token amount)`;
   } else {
-    return `Transfer from ${from} to ${to}`;
+    valStr = `Transfer`;
   }
+
+  const parts: string[] = [`${valStr} from ${from} → ${to}`];
+  if (shortHash) parts.push(`tx: ${shortHash}`);
+  if (timeFormatted) parts.push(`time: ${timeFormatted}`);
+
+  return parts.join(' | ');
 }
 
 /**
@@ -306,8 +329,15 @@ export function extractDeterministicObservations(
     }
   } else if (isTxQuestion) {
     if (rawTransfers.length > 0) {
-      rawTransfers.slice(0, 3).forEach((t, idx) => {
-        const rank = idx === 0 ? 'Largest transfer' : idx === 1 ? '2nd largest transfer' : '3rd largest transfer';
+      rawTransfers.slice(0, 4).forEach((t, idx) => {
+        const rank =
+          idx === 0
+            ? 'Largest transfer'
+            : idx === 1
+            ? '2nd largest transfer'
+            : idx === 2
+            ? '3rd largest transfer'
+            : `${idx + 1}th largest transfer`;
         observations.push({
           id: generateId('fnd'),
           statement: `${rank}: ${formatTransferItem(t, symbol)}`,

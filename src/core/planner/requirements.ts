@@ -14,6 +14,55 @@ function getDefaultDateRange(days = 7): { from: string; to: string } {
   return { from, to };
 }
 
+export interface TimeWindowInfo {
+  days: number;
+  timeframe: '5m' | '1h' | '6h' | '12h' | '1d' | '7d';
+  dateRange: { from: string; to: string };
+  label: 'today' | 'this week' | 'this month' | 'recently' | 'default';
+}
+
+export function parseTimeWindow(question: string): TimeWindowInfo {
+  const q = question.toLowerCase();
+  if (/\b(today|past 24 hours?|last 24 hours?|24h)\b/.test(q)) {
+    return {
+      days: 1,
+      timeframe: '1d',
+      dateRange: getDefaultDateRange(1),
+      label: 'today',
+    };
+  }
+  if (/\b(this month|past 30 days?|last 30 days?|30d|past month|last month)\b/.test(q)) {
+    return {
+      days: 30,
+      timeframe: '7d',
+      dateRange: getDefaultDateRange(30),
+      label: 'this month',
+    };
+  }
+  if (/\b(recently|recent)\b/.test(q)) {
+    return {
+      days: 7,
+      timeframe: '7d',
+      dateRange: getDefaultDateRange(7),
+      label: 'recently',
+    };
+  }
+  if (/\b(this week|past 7 days?|last 7 days?|7d|past week|last week)\b/.test(q)) {
+    return {
+      days: 7,
+      timeframe: '7d',
+      dateRange: getDefaultDateRange(7),
+      label: 'this week',
+    };
+  }
+  return {
+    days: 7,
+    timeframe: '7d',
+    dateRange: getDefaultDateRange(7),
+    label: 'default',
+  };
+}
+
 export class RequirementFormulator {
   /**
    * Formulates structured evidence requirements based on intent, question semantics,
@@ -34,7 +83,8 @@ export class RequirementFormulator {
         tokenAddress = native.address;
       }
     }
-    const defaultDate = getDefaultDateRange(7);
+    const timeWindow = parseTimeWindow(question);
+    const defaultDate = timeWindow.dateRange;
 
     switch (intent) {
       case 'activity_change': {
@@ -47,7 +97,7 @@ export class RequirementFormulator {
             priority: 'required',
             rationale: 'Establish baseline price, volume, and market valuation at time of query',
             candidateCapabilities: ['token_information'],
-            parameters: { token_address: tokenAddress, chain, timeframe: '1d' },
+            parameters: { token_address: tokenAddress, chain, timeframe: timeWindow.timeframe },
           },
           {
             id: generateId('req'),
@@ -55,7 +105,7 @@ export class RequirementFormulator {
             priority: 'required',
             rationale: 'Determine which market participant cohorts drove net inflows or outflows',
             candidateCapabilities: ['flow_intelligence'],
-            parameters: { token_address: tokenAddress, chain, timeframe: '1d' },
+            parameters: { token_address: tokenAddress, chain, timeframe: timeWindow.timeframe },
           },
           {
             id: generateId('req'),
@@ -177,7 +227,13 @@ export class RequirementFormulator {
             priority: 'required',
             rationale: 'Retrieve individual transfer events above threshold value',
             candidateCapabilities: ['token_transfers'],
-            parameters: { token_address: tokenAddress, chain, date: defaultDate },
+            parameters: {
+              token_address: tokenAddress,
+              chain,
+              date: defaultDate,
+              time_window: timeWindow.label,
+              timeframe: timeWindow.timeframe,
+            },
           },
           {
             id: generateId('req'),
@@ -185,7 +241,13 @@ export class RequirementFormulator {
             priority: 'optional',
             rationale: 'Compare direct transfers against decentralized exchange trades',
             candidateCapabilities: ['dex_trades'],
-            parameters: { token_address: tokenAddress, chain, date: defaultDate },
+            parameters: {
+              token_address: tokenAddress,
+              chain,
+              date: defaultDate,
+              time_window: timeWindow.label,
+              timeframe: timeWindow.timeframe,
+            },
           },
         ];
       }

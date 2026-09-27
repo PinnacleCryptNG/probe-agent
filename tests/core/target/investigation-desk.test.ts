@@ -220,7 +220,7 @@ describe('PROBE On-Chain Investigation Desk Matrix', () => {
 
       const plan = await planner.plan({ target: res.target }, q);
       expect(plan.intent).toBe('large_transactions');
-      expect(plan.unresolvedRequirements).toHaveLength(0);
+      expect(plan.warnings.some((w) => w.code === 'CHAIN_UNSUPPORTED')).toBe(true);
     });
   });
 

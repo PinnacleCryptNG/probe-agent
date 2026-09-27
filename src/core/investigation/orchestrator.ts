@@ -414,9 +414,52 @@ export class InvestigationOrchestrator {
       };
     }
 
-    // 3. Check for unresolved requirements that prevent safe execution or speculative queries
-    const isSpeculative = plan.intent === 'unknown';
+    // 3. Check for unsupported chain capabilities or unresolved requirements
+    const chainUnsupportedWarning = plan.warnings.find((w) => w.code === 'CHAIN_UNSUPPORTED');
     const hasNoPlannedCapabilities = plan.plannedCapabilities.length === 0;
+
+    if (hasNoPlannedCapabilities && chainUnsupportedWarning) {
+      const targetSymbol =
+        resolvedTarget.type === 'token'
+          ? resolvedTarget.token.symbol
+          : resolvedTarget.type === 'chain'
+          ? resolvedTarget.chainDisplayName
+          : resolvedTarget.type === 'wallet'
+          ? truncateAddress(resolvedTarget.address)
+          : (effectiveToken?.symbol ?? 'this asset');
+
+      const capabilityLimitationMessage =
+        `I couldn't retrieve verified transaction-level data for ${targetSymbol} over this period because the available Nansen capability does not support that query.`;
+
+      this.manager.addMessage(currentInv.id, 'assistant', capabilityLimitationMessage, {
+        turnId,
+        capabilityUnavailable: true,
+        chain: resolvedTarget.chain,
+      });
+
+      try {
+        this.manager.transitionState(currentInv.id, 'ANSWERED');
+      } catch {
+        // Safe transition
+      }
+
+      return {
+        investigationId: currentInv.id,
+        turnId,
+        status: 'capability_unavailable',
+        question: trimmedQuestion,
+        target: resolvedTarget,
+        token: effectiveToken,
+        plan,
+        evidence: [],
+        error: {
+          code: 'CHAIN_UNSUPPORTED',
+          message: capabilityLimitationMessage,
+        },
+      };
+    }
+
+    const isSpeculative = plan.intent === 'unknown';
     const hasUnresolvedRequired = plan.evidenceRequirements.some(
       (r) => r.priority === 'required' && !r.resolvedCapability
     );
@@ -547,56 +590,80 @@ export class InvestigationOrchestrator {
         executionErrors,
       });
 
-      // Synthesize empty evidence to produce grounded unknown response
-      await request.onProgress?.('building_report');
-      const emptySynthesis = await this.synthesizer.synthesize({
-        question: trimmedQuestion,
-        investigationId: currentInv.id,
-        tokenContext: tokenCtxForSynthesis,
-        target: resolvedTarget,
-        plan,
-        evidence: [],
-        conversationHistory: currentInv.messages,
-        activeFindings: currentInv.findings,
-      });
+      const targetSymbol =
+        resolvedTarget.type === 'token'
+          ? resolvedTarget.token.symbol
+          : resolvedTarget.type === 'chain'
+          ? resolvedTarget.chainDisplayName
+          : resolvedTarget.type === 'wallet'
+          ? truncateAddress(resolvedTarget.address)
+          : (effectiveToken?.symbol ?? 'this asset');
 
-      this.manager.addMessage(currentInv.id, 'assistant', emptySynthesis.answer, {
-        turnId,
-        emptyEvidence: true,
-        isBudgetLimited,
-      });
+      // Case C: Nansen request failed (rate limit, network error, etc.)
+      if (executionErrors.length > 0) {
+        const errorMsg = executionErrors.join('; ');
+        this.manager.addMessage(currentInv.id, 'assistant', errorMsg, {
+          turnId,
+          executionError: true,
+        });
 
-      try {
-        this.manager.transitionState(currentInv.id, 'ANSWERED');
-      } catch {
-        // Safe transition
+        try {
+          this.manager.transitionState(currentInv.id, 'CLOSED');
+        } catch {
+          // Safe transition
+        }
+
+        const status = isBudgetLimited ? 'budget_limited' : isRateLimited ? 'insufficient_evidence' : 'failed';
+        const errorCode = isRateLimited ? 'RATE_LIMIT_ERROR' : isBudgetLimited ? 'BUDGET_EXCEEDED' : 'EXECUTION_ERROR';
+
+        return {
+          investigationId: currentInv.id,
+          turnId,
+          status,
+          question: trimmedQuestion,
+          target: resolvedTarget,
+          token: effectiveToken,
+          plan,
+          evidence: [],
+          unresolvedRequirements: [
+            ...plan.unresolvedRequirements,
+            ...executionErrors,
+          ],
+          error: {
+            code: errorCode,
+            message: errorMsg,
+          },
+        };
       }
 
-      const finalStatus = isBudgetLimited
-        ? 'budget_limited'
-        : isRateLimited || executionErrors.length > 0
-        ? 'insufficient_evidence'
-        : 'insufficient_evidence';
+      // Case A: Request executed successfully, but Nansen returned 0 matching records for large_transactions
+      const isTxQuery = plan.intent === 'large_transactions';
+      if (isTxQuery) {
+        const noRecordsMsg = `No large transactions were detected for ${targetSymbol} over this period in Nansen's indexed data.`;
 
-      return {
-        investigationId: currentInv.id,
-        turnId,
-        status: finalStatus,
-        question: trimmedQuestion,
-        target: resolvedTarget,
-        token: effectiveToken,
-        plan,
-        evidence: [],
-        synthesis: emptySynthesis,
-        unresolvedRequirements: [
-          ...plan.unresolvedRequirements,
-          ...(executionErrors.length > 0 ? executionErrors : ['No on-chain records returned']),
-        ],
-        error: executionErrors.length > 0 ? {
-          code: isRateLimited ? 'RATE_LIMIT_ERROR' : isBudgetLimited ? 'BUDGET_EXCEEDED' : 'EVIDENCE_RETRIEVAL_FAILED',
-          message: executionErrors.join('; '),
-        } : undefined,
-      };
+        this.manager.addMessage(currentInv.id, 'assistant', noRecordsMsg, {
+          turnId,
+          emptyRecords: true,
+        });
+
+        try {
+          this.manager.transitionState(currentInv.id, 'ANSWERED');
+        } catch {
+          // Safe transition
+        }
+
+        return {
+          investigationId: currentInv.id,
+          turnId,
+          status: 'no_records_found',
+          question: trimmedQuestion,
+          target: resolvedTarget,
+          token: effectiveToken,
+          plan,
+          evidence: [],
+          unresolvedRequirements: ['No on-chain records returned in Nansen indexed dataset'],
+        };
+      }
     }
 
     // 7. Pass retrieved evidence to EvidenceSynthesisEngine
@@ -743,7 +810,11 @@ export class InvestigationOrchestrator {
       },
     });
 
-    const status = isBudgetLimited ? 'budget_limited' : 'completed';
+    const status = isBudgetLimited
+      ? 'budget_limited'
+      : retrievedEvidence.length === 0 || (synthesis.observations.length === 0 && synthesis.answer.toLowerCase().includes('insufficient'))
+      ? 'insufficient_evidence'
+      : 'completed';
 
     return {
       investigationId: currentInv.id,

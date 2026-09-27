@@ -112,14 +112,22 @@ export function compactNormalizedData(
   if (capability === 'token_transfers') {
     const transfers = Array.isArray(data.transfers)
       ? data.transfers.slice(0, 5).map((t: any) => ({
-          transaction_hash: t.transaction_hash || t.hash,
-          from_address: t.from_address || t.from,
-          to_address: t.to_address || t.to,
-          volume_usd: t.volume_usd || t.value_usd,
+          transaction_hash: t.transactionHash || t.transaction_hash || t.hash,
+          timestamp: t.timestamp || t.block_timestamp,
+          chain: t.chain,
+          token_symbol: t.tokenSymbol || t.token_symbol || t.symbol,
+          amount: t.amount,
+          amount_usd: t.usdValue ?? t.amount_usd ?? t.transfer_value_usd,
+          from_address: t.fromAddress || t.from_address || t.from,
+          from_label: t.fromLabel || t.from_label,
+          to_address: t.toAddress || t.to_address || t.to,
+          to_label: t.toLabel || t.to_label,
+          transaction_type: t.transactionType || t.transaction_type,
+          ranked_by: t.rankedBy,
         }))
       : [];
     return {
-      recentTransfers: transfers,
+      topTransfers: transfers,
       totalCount: data.count ?? transfers.length,
     };
   }

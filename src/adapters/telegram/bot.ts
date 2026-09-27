@@ -10,6 +10,8 @@ import { extractTokenCandidate, isOnlyTokenInput } from './token-extractor.js';
 import { detectChainOnlyInput } from '../../core/token/detector.js';
 import { ITokenResolver, defaultTokenResolver } from '../../core/token/resolver.js';
 import { ITargetResolver, TargetResolver, InvestigationTarget } from '../../core/target/index.js';
+import { getNativeAssetForTicker } from '../../core/target/native-assets.js';
+import { getChainDisplayName } from '../../core/target/chain-resolver.js';
 import { truncateAddress } from '../../core/synthesis/formatting.js';
 import { profiler } from '../../utils/profiler.js';
 import { TelegramProgressTracker } from './progress.js';
@@ -216,7 +218,12 @@ export class ProbeTelegramBot {
           token: target.token,
         });
 
-        await ctx.reply(TelegramMessages.tokenSelected(target.token.symbol), {
+        const native = getNativeAssetForTicker(target.token.symbol);
+        const chainDisplayName = native
+          ? native.chainDisplayName
+          : getChainDisplayName(target.token.chain) || target.token.chain;
+
+        await ctx.reply(TelegramMessages.tokenSelected(target.token.symbol, chainDisplayName, Boolean(native)), {
           reply_markup: TelegramKeyboards.tokenShortcuts(),
         });
         return;

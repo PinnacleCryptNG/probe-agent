@@ -62,6 +62,29 @@ export function formatInvestigationResult(result: InvestigationTurnResult): stri
     return formatChallengeResult(result.challenge, symbol);
   }
 
+  // Capability unavailable on target/chain state
+  if (result.status === 'capability_unavailable') {
+    const errorMsg = result.error?.message;
+    if (errorMsg) return errorMsg;
+    return `I couldn't retrieve verified transaction-level data for ${symbol} over this period because the available Nansen capability does not support that query.`;
+  }
+
+  // No records found in Nansen's indexed data state
+  if (result.status === 'no_records_found') {
+    const qLower = (result.question || '').toLowerCase();
+    const isTx = /transaction|transfer|swap/i.test(qLower);
+    const msg = isTx
+      ? `No large transactions were detected for ${symbol} over this period in Nansen's indexed data.`
+      : `No matching records were found for ${symbol} over this period in Nansen's indexed data.`;
+    return [
+      `🔎 ${symbol} — ${result.question}`,
+      '',
+      msg,
+      '',
+      `Ask another question about ${symbol}.`,
+    ].join('\n');
+  }
+
   // 3. Insufficient evidence state
   if (result.status === 'insufficient_evidence') {
     const lines = [

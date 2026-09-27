@@ -219,6 +219,28 @@ export class TargetResolver implements ITargetResolver {
             explicitChain: explicitChainInfo?.chain,
           };
 
+          logger.debug('Target resolution trace', {
+            input: question,
+            normalizedSymbol: native.ticker,
+            nativeAssetMatch: `${native.ticker} (${native.chain})`,
+            nansenSearchAttempted: false,
+            candidateCount: 1,
+            candidates: [
+              {
+                symbol: native.ticker,
+                chain: resolvedChain,
+                address: resolvedAddress,
+              },
+            ],
+            selectedCandidate: {
+              symbol: native.ticker,
+              chain: resolvedChain,
+              address: resolvedAddress,
+            },
+            ambiguityReason: null,
+            finalTarget: tokenTarget,
+          });
+
           logger.info('Native asset target resolved', {
             symbol: native.ticker,
             chain: resolvedChain,
@@ -235,6 +257,27 @@ export class TargetResolver implements ITargetResolver {
 
       // 3b. Normal Nansen token resolution for non-native tokens or cross-chain tokens
       const detailed = await this.resolveCandidate(tokenCandidate);
+      const candidatesList = (detailed.candidates ?? (detailed.token ? [detailed.token] : [])).map((c: any) => ({
+        symbol: (c.symbol as string) ?? '',
+        chain: (c.chain as string) ?? '',
+        address: (c.address as string) ?? (c.contract_address as string) ?? '',
+        rank: c.rank as number | undefined,
+        volume_24h: (c.volume_24h ?? c.volume_24h_usd ?? c.volume24hUsd ?? c.volume24h) as number | undefined,
+        market_cap: (c.market_cap ?? c.market_cap_usd ?? c.marketCapUsd ?? c.marketCap) as number | undefined,
+      }));
+
+      const selectedCandidateObj = detailed.token
+        ? {
+            symbol: detailed.token.symbol,
+            chain: detailed.token.chain,
+            address: detailed.token.address,
+          }
+        : null;
+
+      const ambiguityReasonStr =
+        detailed.status === 'AMBIGUOUS_SYMBOL'
+          ? detailed.ambiguityReason ?? 'Competing chains without dominant token'
+          : null;
 
       if (detailed.status === 'RESOLVED' && detailed.token) {
         const tokenTarget: InvestigationTarget = {
@@ -244,6 +287,18 @@ export class TargetResolver implements ITargetResolver {
           rawIdentifier: tokenCandidate.identifier,
           explicitChain: explicitChainInfo?.chain,
         };
+
+        logger.debug('Target resolution trace', {
+          input: question,
+          normalizedSymbol: tokenCandidate.identifier.toUpperCase(),
+          nativeAssetMatch: native ? `${native.ticker} (${native.chain})` : null,
+          nansenSearchAttempted: true,
+          candidateCount: candidatesList.length,
+          candidates: candidatesList,
+          selectedCandidate: selectedCandidateObj,
+          ambiguityReason: ambiguityReasonStr,
+          finalTarget: tokenTarget,
+        });
 
         logger.info('Explicit token target resolved', {
           symbol: detailed.token.symbol,
@@ -257,6 +312,18 @@ export class TargetResolver implements ITargetResolver {
           source: explicitChainInfo ? 'explicit_message_with_chain' : 'explicit_message',
         };
       }
+
+      logger.debug('Target resolution trace', {
+        input: question,
+        normalizedSymbol: tokenCandidate.identifier.toUpperCase(),
+        nativeAssetMatch: native ? `${native.ticker} (${native.chain})` : null,
+        nansenSearchAttempted: true,
+        candidateCount: candidatesList.length,
+        candidates: candidatesList,
+        selectedCandidate: selectedCandidateObj,
+        ambiguityReason: ambiguityReasonStr,
+        finalTarget: null,
+      });
 
       if (detailed.status === 'AMBIGUOUS_SYMBOL') {
         const chains = detailed.availableChains ?? [];

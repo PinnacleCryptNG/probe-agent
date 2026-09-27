@@ -180,12 +180,56 @@ export class EvidenceNormalizer implements IEvidenceNormalizer {
       case 'token_transfers': {
         const rawObj = (raw ?? {}) as any;
         const transfers = Array.isArray(rawObj.data) ? rawObj.data : (rawObj.transfers ?? (Array.isArray(rawObj) ? rawObj : []));
+        const normalizedTransfers = transfers.map((t: any) => {
+          const hash = t.transaction_hash || t.hash || t.tx_hash || '';
+          const timestamp = t.block_timestamp || t.timestamp || t.time || '';
+          const chain = t.chain || provenance.chain;
+          const tokenSymbol = t.token_symbol || t.symbol || '';
+
+          const rawUsd = t.amount_usd ?? t.transfer_value_usd ?? t.usd_value;
+          const usdValue = typeof rawUsd === 'number' ? rawUsd : (rawUsd ? parseFloat(String(rawUsd)) : undefined);
+
+          const rawAmt = t.transfer_amount ?? t.amount;
+          const amount = typeof rawAmt === 'number' ? rawAmt : (rawAmt ? parseFloat(String(rawAmt)) : 0);
+
+          const fromAddr = t.from_address || t.from || '';
+          const fromLabel = t.from_label || t.from_address_label || undefined;
+          const toAddr = t.to_address || t.to || '';
+          const toLabel = t.to_label || t.to_address_label || undefined;
+          const txType = t.transaction_type || t.type || 'Transfer';
+          const source = t.source || 'Nansen transfers';
+
+          const hasUsd = usdValue !== undefined && !isNaN(usdValue) && usdValue > 0;
+          const rankingValue = hasUsd ? usdValue : amount;
+          const rankedBy: 'usd_value' | 'amount' = hasUsd ? 'usd_value' : 'amount';
+
+          return {
+            transactionHash: hash,
+            timestamp,
+            chain,
+            tokenSymbol,
+            amount,
+            usdValue: hasUsd ? usdValue : undefined,
+            fromAddress: fromAddr,
+            fromLabel,
+            toAddress: toAddr,
+            toLabel,
+            transactionType: txType,
+            source,
+            rankingValue,
+            rankedBy,
+            ...t,
+          };
+        });
+
+        normalizedTransfers.sort((a: any, b: any) => (b.rankingValue ?? 0) - (a.rankingValue ?? 0));
+
         return {
-          title: `Granular Token Transfers: ${provenance.chain.toUpperCase()}`,
-          summary: `Retrieved ${transfers.length} token transfer transactions.`,
+          title: `Granular Token Transfers: ${(provenance.chain || 'UNKNOWN').toUpperCase()}`,
+          summary: `Retrieved and ranked ${normalizedTransfers.length} token transfer transactions largest-first.`,
           normalizedData: {
-            transfers,
-            count: transfers.length,
+            transfers: normalizedTransfers,
+            count: normalizedTransfers.length,
           },
         };
       }
@@ -193,12 +237,38 @@ export class EvidenceNormalizer implements IEvidenceNormalizer {
       case 'dex_trades': {
         const rawObj = (raw ?? {}) as any;
         const trades = Array.isArray(rawObj.data) ? rawObj.data : (rawObj.trades ?? (Array.isArray(rawObj) ? rawObj : []));
+        const normalizedTrades = trades.map((t: any) => {
+          const hash = t.transaction_hash || t.hash || t.tx_hash || '';
+          const timestamp = t.block_timestamp || t.timestamp || '';
+          const chain = t.chain || provenance.chain;
+          const rawUsd = t.volume_usd ?? t.usd_value ?? t.estimated_value_usd;
+          const usdValue = typeof rawUsd === 'number' ? rawUsd : (rawUsd ? parseFloat(String(rawUsd)) : undefined);
+          const rawAmt = t.token_amount ?? t.amount;
+          const amount = typeof rawAmt === 'number' ? rawAmt : (rawAmt ? parseFloat(String(rawAmt)) : 0);
+          const hasUsd = usdValue !== undefined && !isNaN(usdValue) && usdValue > 0;
+          const rankingValue = hasUsd ? usdValue : amount;
+          const rankedBy: 'usd_value' | 'amount' = hasUsd ? 'usd_value' : 'amount';
+
+          return {
+            transactionHash: hash,
+            timestamp,
+            chain,
+            amount,
+            usdValue: hasUsd ? usdValue : undefined,
+            rankingValue,
+            rankedBy,
+            ...t,
+          };
+        });
+
+        normalizedTrades.sort((a: any, b: any) => (b.rankingValue ?? 0) - (a.rankingValue ?? 0));
+
         return {
-          title: `DEX Trade Executions: ${provenance.chain.toUpperCase()}`,
-          summary: `Retrieved ${trades.length} decentralized exchange swap events.`,
+          title: `DEX Trade Executions: ${(provenance.chain || 'UNKNOWN').toUpperCase()}`,
+          summary: `Retrieved and ranked ${normalizedTrades.length} decentralized exchange swap events.`,
           normalizedData: {
-            trades,
-            count: trades.length,
+            trades: normalizedTrades,
+            count: normalizedTrades.length,
           },
         };
       }

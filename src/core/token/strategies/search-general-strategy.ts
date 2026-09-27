@@ -102,28 +102,6 @@ export class SearchGeneralStrategy implements IResolutionStrategy {
         };
       }
 
-      // Collect unique chains for matching tokens
-      const chainSet = new Set<string>();
-      for (const m of symbolMatches) {
-        if (m.chain) {
-          chainSet.add((m.chain as string).toLowerCase());
-        }
-      }
-      const uniqueChains = Array.from(chainSet);
-
-      // Single match or all on single chain
-      if (uniqueChains.length <= 1) {
-        const topMatch = this.rankTokens(symbolMatches)[0];
-        return {
-          matched: true,
-          status: 'RESOLVED',
-          token: this.toTokenContext(topMatch, candidate),
-          exactMatch: true,
-          rawResultsCount: tokens.length,
-          creditCost: 0,
-        };
-      }
-
       // Check native asset registry for unambiguous native gas tokens (ETH on Ethereum, SOL on Solana, HYPE on Hyperliquid, APT on Aptos, etc.)
       const nativeAsset = getNativeAssetForTicker(targetSymbol);
       if (nativeAsset) {
@@ -138,26 +116,90 @@ export class SearchGeneralStrategy implements IResolutionStrategy {
             token: this.toTokenContext(nativeMatch, candidate),
             exactMatch: true,
             rawResultsCount: tokens.length,
+            candidates: symbolMatches,
             creditCost: 0,
           };
         }
       }
 
-      if (targetSymbol === 'BTC' || targetSymbol === 'WBTC') {
-        const btcOnEthereum = symbolMatches.find((t) => (t.chain as string)?.toLowerCase() === 'ethereum');
-        if (btcOnEthereum) {
+      // Filter by candidate.detectedChain if explicitly specified
+      if (candidate.detectedChain) {
+        const chainMatches = symbolMatches.filter(
+          (t) => (t.chain as string)?.toLowerCase() === candidate.detectedChain?.toLowerCase()
+        );
+        if (chainMatches.length > 0) {
+          const topMatch = this.rankTokens(chainMatches)[0];
           return {
             matched: true,
             status: 'RESOLVED',
-            token: this.toTokenContext(btcOnEthereum, candidate),
+            token: this.toTokenContext(topMatch, candidate),
             exactMatch: true,
             rawResultsCount: tokens.length,
+            candidates: symbolMatches,
             creditCost: 0,
           };
         }
       }
 
-      // Multiple competing chains -> AMBIGUOUS_SYMBOL
+      // Collect unique chains for matching tokens
+      const chainSet = new Set<string>();
+      for (const m of symbolMatches) {
+        if (m.chain) {
+          chainSet.add((m.chain as string).toLowerCase());
+        }
+      }
+      const uniqueChains = Array.from(chainSet);
+
+      // Single match or all on single chain -> resolve immediately
+      if (symbolMatches.length === 1 || uniqueChains.length <= 1) {
+        const topMatch = this.rankTokens(symbolMatches)[0];
+        return {
+          matched: true,
+          status: 'RESOLVED',
+          token: this.toTokenContext(topMatch, candidate),
+          exactMatch: true,
+          rawResultsCount: tokens.length,
+          candidates: symbolMatches,
+          creditCost: 0,
+        };
+      }
+
+      // Multiple competing candidates across multiple chains.
+      // Rank by composite market importance (market cap, volume, rank, verification, primary chains).
+      const ranked = this.rankTokens(symbolMatches);
+      const topMatch = ranked[0];
+      const runnerUp = ranked[1];
+      const topScore = this.computeCandidateScore(topMatch);
+      const runnerUpScore = runnerUp ? this.computeCandidateScore(runnerUp) : 0;
+
+      // Determine if top candidate is sufficiently dominant/canonical vs genuinely ambiguous.
+      // Genuine ambiguity occurs ONLY when multiple candidates on DIFFERENT chains have comparable,
+      // substantial market activity (neither candidate has 3x+ score), or all have 0/negligible metrics.
+      const isDominant =
+        topScore > 0 &&
+        (!runnerUp ||
+          ((topMatch.chain as string)?.toLowerCase() === (runnerUp.chain as string)?.toLowerCase()) ||
+          runnerUpScore === 0 ||
+          topScore >= runnerUpScore * 3 ||
+          (Boolean(topMatch.verified) && !runnerUp.verified) ||
+          (typeof topMatch.rank === 'number' &&
+            topMatch.rank > 0 &&
+            topMatch.rank <= 500 &&
+            (!runnerUp.rank || (runnerUp.rank as number) > 2000)));
+
+      if (isDominant) {
+        return {
+          matched: true,
+          status: 'RESOLVED',
+          token: this.toTokenContext(topMatch, candidate),
+          exactMatch: true,
+          rawResultsCount: tokens.length,
+          candidates: symbolMatches,
+          creditCost: 0,
+        };
+      }
+
+      // Multiple competing chains without a dominant candidate -> AMBIGUOUS
       const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
       const availableChains = uniqueChains.slice(0, 4).map(capitalize);
 
@@ -166,6 +208,8 @@ export class SearchGeneralStrategy implements IResolutionStrategy {
         status: 'AMBIGUOUS',
         availableChains,
         rawResultsCount: tokens.length,
+        candidates: symbolMatches,
+        ambiguityReason: `Multiple competing candidates found for ${targetSymbol} across chains without a dominant token`,
         failureReason: 'AMBIGUOUS_SYMBOL',
         creditCost: 0,
       };
@@ -190,16 +234,41 @@ export class SearchGeneralStrategy implements IResolutionStrategy {
     return (raw.tokens ?? raw.results ?? rawData.tokens ?? rawData.results ?? []) as Array<Record<string, unknown>>;
   }
 
+  private computeCandidateScore(t: Record<string, unknown>): number {
+    const mcap = Math.max(
+      0,
+      Number(t.market_cap ?? t.market_cap_usd ?? t.marketCapUsd ?? t.marketCap ?? 0)
+    );
+    const vol = Math.max(
+      0,
+      Number(t.volume_24h ?? t.volume_24h_usd ?? t.volume24hUsd ?? t.volume24h ?? t.volume_usd_24h ?? 0)
+    );
+    let score = Math.max(mcap, vol * 10);
+
+    const rank = Number(t.rank) || 0;
+    if (rank > 0 && rank <= 100) {
+      score += 50_000_000;
+    } else if (rank > 0 && rank <= 500) {
+      score += 20_000_000;
+    } else if (rank > 0 && rank <= 2000) {
+      score += 5_000_000;
+    }
+
+    if (t.verified) {
+      score += 10_000_000;
+    }
+
+    const chain = ((t.chain as string) ?? '').toLowerCase();
+    const primaryChains = ['ethereum', 'solana', 'base', 'hyperliquid', 'arbitrum'];
+    if (primaryChains.includes(chain)) {
+      score += 2_000_000;
+    }
+
+    return score;
+  }
+
   private rankTokens(tokens: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
-    const primaryChains = ['ethereum', 'solana', 'base'];
-    return [...tokens].sort((a, b) => {
-      const aPrimary = primaryChains.indexOf(((a.chain as string) ?? '').toLowerCase()) !== -1 ? 1 : 0;
-      const bPrimary = primaryChains.indexOf(((b.chain as string) ?? '').toLowerCase()) !== -1 ? 1 : 0;
-      if (aPrimary !== bPrimary) return bPrimary - aPrimary;
-      const aVol = (a.volume_24h as number) ?? (a.market_cap as number) ?? 0;
-      const bVol = (b.volume_24h as number) ?? (b.market_cap as number) ?? 0;
-      return bVol - aVol;
-    });
+    return [...tokens].sort((a, b) => this.computeCandidateScore(b) - this.computeCandidateScore(a));
   }
 
   private toTokenContext(item: Record<string, unknown>, candidate: TokenCandidate): TokenContext {

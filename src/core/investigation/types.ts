@@ -10,6 +10,8 @@ export type InvestigationTurnStatus =
   | 'needs_clarification'
   | 'insufficient_evidence'
   | 'budget_limited'
+  | 'capability_unavailable'
+  | 'no_records_found'
   | 'failed';
 
 export type InvestigationProgressStage =
