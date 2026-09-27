@@ -5,14 +5,14 @@ export const TelegramMessages = {
       '',
       'Evidence-first on-chain investigation.',
       '',
-      'Investigate chains, tokens, wallets, flows and transactions.',
+      'Investigate chains, tokens, wallets, and transactions.',
       '',
       'Try:',
       "• What's happening on Ethereum?",
       '• Who are the biggest whales on Solana?',
       '• Investigate $PEPE',
-      '• Who is buying ETH?',
-      '• Show me the biggest transactions this week.',
+      '• Investigate this wallet: 0x...',
+      '• What were the biggest transactions this week?',
     ].join('\n');
   },
 
@@ -47,6 +47,18 @@ export const TelegramMessages = {
       header,
       '',
       question,
+      '',
+      'Or ask me anything.',
+    ].join('\n');
+  },
+
+  walletSelected(address: string, chainDisplayName?: string): string {
+    const shortAddr = `${address.slice(0, 6)}...${address.slice(-4)}`;
+    const header = chainDisplayName ? `🔎 ${shortAddr} · ${chainDisplayName}` : `🔎 ${shortAddr}`;
+    return [
+      header,
+      '',
+      'What would you like to investigate about this wallet?',
       '',
       'Or ask me anything.',
     ].join('\n');

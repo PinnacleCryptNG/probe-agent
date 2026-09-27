@@ -43,16 +43,23 @@ export interface UnresolvedTargetResult {
   source: TargetResolutionSource;
   availableChains?: string[];
   candidateIdentifier?: string;
+  candidateType?: 'token' | 'wallet';
   clarificationMessage?: string;
 }
 
 export type TargetResolutionResult = ResolvedTargetResult | UnresolvedTargetResult;
 
-export interface PendingResolutionContext {
-  type: 'token';
-  symbol: string;
-  selectedChain?: string;
-}
+export type PendingResolutionContext =
+  | {
+      type: 'token';
+      symbol: string;
+      selectedChain?: string;
+    }
+  | {
+      type: 'wallet';
+      address: string;
+      selectedChain?: string;
+    };
 
 export interface TargetResolverOptions {
   question: string;

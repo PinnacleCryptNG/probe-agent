@@ -146,10 +146,12 @@ describe('Telegram Adapter Integration (Phase 3A)', () => {
     const reply = sentMessages[0];
     expect(reply.text).toContain('🔎 PROBE');
     expect(reply.text).toContain('Evidence-first on-chain investigation.');
-    expect(reply.text).toContain('Investigate chains, tokens, wallets, flows and transactions.');
+    expect(reply.text).toContain('Investigate chains, tokens, wallets, and transactions.');
     expect(reply.text).toContain("• What's happening on Ethereum?");
     expect(reply.text).toContain('• Who are the biggest whales on Solana?');
     expect(reply.text).toContain('• Investigate $PEPE');
+    expect(reply.text).toContain('• Investigate this wallet: 0x...');
+    expect(reply.text).toContain('• What were the biggest transactions this week?');
     expect(reply.text).not.toContain('Send me a token symbol or contract address.');
     expect(reply.options?.reply_markup).toBeUndefined();
   });

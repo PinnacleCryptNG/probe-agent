@@ -59,6 +59,7 @@ export const WalletTargetSchema = z.object({
   chain: z.string(),
   label: z.string().optional(),
   rawIdentifier: z.string().optional(),
+  explicitChain: z.string().optional(),
 });
 
 export type WalletTarget = z.infer<typeof WalletTargetSchema>;

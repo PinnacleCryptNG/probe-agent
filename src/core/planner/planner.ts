@@ -327,23 +327,42 @@ export class InvestigationPlanner {
       return 'historical_comparison';
     }
 
-    // 11. Wallet relationships (counterparties, related wallets, first funder)
+    // 11. Wallet relationships (counterparties, related wallets, first funder, who owns)
     if (
       q.includes('related wallet') ||
+      q.includes('related wallets') ||
       q.includes('connected') ||
       q.includes('first funder') ||
       q.includes('who funded') ||
+      q.includes('funder') ||
+      q.includes('who owns') ||
+      q.includes('owner') ||
       q.includes('counterpart')
     ) {
       return 'wallet_relationships';
     }
 
-    // 12. Specific wallet activity
+    // 12. Specific wallet activity & balances
+    const isWalletContext =
+      context?.target?.type === 'wallet' ||
+      context?.targetWalletAddress !== undefined ||
+      /\b0x[a-fA-F0-9]{40}\b/i.test(q);
+
     if (
       q.includes('wallet') ||
       q.includes('which wallets') ||
       q.includes('most active') ||
-      q.includes('target address')
+      q.includes('target address') ||
+      (isWalletContext &&
+        (q.includes('balance') ||
+          q.includes('holding') ||
+          q.includes('portfolio') ||
+          q.includes('worth') ||
+          q.includes('transaction') ||
+          q.includes('activity') ||
+          q.includes('doing') ||
+          q.includes('investigate') ||
+          q.includes('what has this wallet')))
     ) {
       return 'wallet_activity';
     }

@@ -275,11 +275,40 @@ export class RequirementFormulator {
       }
 
       case 'wallet_activity': {
-        // e.g. "Which wallets have been most active?", "What did this wallet do?"
         const targetWallet =
           context.targetWalletAddress ||
           (target?.type === 'wallet' ? target.address : undefined) ||
           (q.match(/0x[a-fA-F0-9]{40}/)?.[0] ?? '');
+
+        // If user specifically asked about balance / holdings / portfolio
+        if (q.includes('balance') || q.includes('holding') || q.includes('portfolio') || q.includes('worth')) {
+          return [
+            {
+              id: generateId('req'),
+              concept: 'wallet current asset holdings',
+              priority: 'required',
+              rationale: 'Determine current portfolio value and token balances',
+              candidateCapabilities: ['wallet_current_balance'],
+              parameters: { address: targetWallet, chain },
+            },
+          ];
+        }
+
+        // If user specifically asked about transactions / transfer history
+        if (q.includes('transaction') || q.includes('transfer') || q.includes('history') || q.includes('tx')) {
+          return [
+            {
+              id: generateId('req'),
+              concept: 'wallet transaction history',
+              priority: 'required',
+              rationale: 'Inspect recent on-chain transactions and call methods executed by target wallet',
+              candidateCapabilities: ['wallet_transactions'],
+              parameters: { address: targetWallet, chain },
+            },
+          ];
+        }
+
+        // General wallet activity inspection (e.g. "What has this wallet been doing?", "Investigate 0x...")
         return [
           {
             id: generateId('req'),
@@ -309,11 +338,48 @@ export class RequirementFormulator {
       }
 
       case 'wallet_relationships': {
-        // e.g. "Are these wallets connected?", "Who funded this wallet?"
         const targetWallet =
           context.targetWalletAddress ||
           (target?.type === 'wallet' ? target.address : undefined) ||
           (q.match(/0x[a-fA-F0-9]{40}/)?.[0] ?? '');
+
+        // If user specifically asked who funded the wallet
+        if (q.includes('funder') || q.includes('funded') || q.includes('funding')) {
+          return [
+            {
+              id: generateId('req'),
+              concept: 'first funder origin identity',
+              priority: 'required',
+              rationale: 'Trace origin gas funding source to discover creator or parent entity',
+              candidateCapabilities: ['wallet_first_funder'],
+              parameters: { address: targetWallet, chain },
+            },
+            {
+              id: generateId('req'),
+              concept: 'co-controlled related wallet clusters',
+              priority: 'optional',
+              rationale: 'Discover address clusters exhibiting shared ownership or coordinated transfers',
+              candidateCapabilities: ['wallet_related'],
+              parameters: { address: targetWallet, chain },
+            },
+          ];
+        }
+
+        // If user specifically asked about counterparties
+        if (q.includes('counterpart')) {
+          return [
+            {
+              id: generateId('req'),
+              concept: 'frequent counterparty network',
+              priority: 'required',
+              rationale: 'Map highest-frequency transaction destinations',
+              candidateCapabilities: ['wallet_counterparties'],
+              parameters: { address: targetWallet, chain },
+            },
+          ];
+        }
+
+        // General wallet relationships
         return [
           {
             id: generateId('req'),
@@ -326,7 +392,7 @@ export class RequirementFormulator {
           {
             id: generateId('req'),
             concept: 'first funder origin identity',
-            priority: 'required',
+            priority: 'optional',
             rationale: 'Trace origin gas funding source to discover creator or parent entity',
             candidateCapabilities: ['wallet_first_funder'],
             parameters: { address: targetWallet, chain },

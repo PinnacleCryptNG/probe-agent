@@ -153,6 +153,22 @@ export function extractExplicitChain(text: string): { chain: string; displayName
     }
   }
 
+  // 4. "<chain> wallet" / "this <chain> wallet" / "<chain> address" (e.g. "Investigate this Ethereum wallet 0x...")
+  const walletMatches = Array.from(trimmed.matchAll(/\b(?:this\s+|the\s+)?([a-zA-Z0-9_-]+)\s+(?:wallet|address)\b/gi));
+  for (const m of walletMatches) {
+    const rawCandidate = m[1]?.trim();
+    if (rawCandidate) {
+      const norm = normalizeChain(rawCandidate);
+      if (norm) {
+        return {
+          chain: norm,
+          displayName: getChainDisplayName(norm),
+          rawMatch: m[0],
+        };
+      }
+    }
+  }
+
   return undefined;
 }
 

@@ -12,6 +12,7 @@ import { InvestigationManager, investigationManager as defaultManager } from './
 import { InvestigationTurnRequest, InvestigationTurnResult } from './types.js';
 import { ITargetResolver, defaultTargetResolver, InvestigationTarget } from '../target/index.js';
 import { getNativeAssetForChain } from '../target/native-assets.js';
+import { getChainDisplayName } from '../target/chain-resolver.js';
 import { isFuturePricePrediction } from '../planner/prediction.js';
 import { truncateAddress } from '../synthesis/formatting.js';
 
@@ -417,19 +418,25 @@ export class InvestigationOrchestrator {
     // 3. Check for unsupported chain capabilities or unresolved requirements
     const chainUnsupportedWarning = plan.warnings.find((w) => w.code === 'CHAIN_UNSUPPORTED');
     const hasNoPlannedCapabilities = plan.plannedCapabilities.length === 0;
+    const hasUnresolvedRequired = plan.evidenceRequirements.some(
+      (r) => r.priority === 'required' && !r.resolvedCapability
+    );
 
-    if (hasNoPlannedCapabilities && chainUnsupportedWarning) {
-      const targetSymbol =
-        resolvedTarget.type === 'token'
-          ? resolvedTarget.token.symbol
-          : resolvedTarget.type === 'chain'
-          ? resolvedTarget.chainDisplayName
-          : resolvedTarget.type === 'wallet'
-          ? truncateAddress(resolvedTarget.address)
-          : (effectiveToken?.symbol ?? 'this asset');
-
-      const capabilityLimitationMessage =
-        `I couldn't retrieve verified transaction-level data for ${targetSymbol} over this period because the available Nansen capability does not support that query.`;
+    if (chainUnsupportedWarning && (hasNoPlannedCapabilities || hasUnresolvedRequired)) {
+      let capabilityLimitationMessage: string;
+      if (resolvedTarget.type === 'wallet') {
+        const chainName = getChainDisplayName(resolvedTarget.chain) || resolvedTarget.chain;
+        capabilityLimitationMessage = `I can't retrieve verified wallet transaction data for this wallet on ${chainName} because the available Nansen capability does not support that query.`;
+      } else {
+        const targetSymbol =
+          resolvedTarget.type === 'token'
+            ? resolvedTarget.token.symbol
+            : resolvedTarget.type === 'chain'
+            ? resolvedTarget.chainDisplayName
+            : (effectiveToken?.symbol ?? 'this asset');
+        capabilityLimitationMessage =
+          `I couldn't retrieve verified transaction-level data for ${targetSymbol} over this period because the available Nansen capability does not support that query.`;
+      }
 
       this.manager.addMessage(currentInv.id, 'assistant', capabilityLimitationMessage, {
         turnId,
@@ -460,9 +467,6 @@ export class InvestigationOrchestrator {
     }
 
     const isSpeculative = plan.intent === 'unknown';
-    const hasUnresolvedRequired = plan.evidenceRequirements.some(
-      (r) => r.priority === 'required' && !r.resolvedCapability
-    );
 
     if (isSpeculative || hasNoPlannedCapabilities || hasUnresolvedRequired) {
       logger.info('Plan requires clarification or cannot be executed on-chain', {

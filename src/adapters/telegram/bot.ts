@@ -7,11 +7,11 @@ import { formatInvestigationResult, splitTelegramMessage } from './formatter.js'
 import { TelegramKeyboards } from './keyboard.js';
 import { TelegramMessages } from './messages.js';
 import { extractTokenCandidate, isOnlyTokenInput } from './token-extractor.js';
-import { detectChainOnlyInput } from '../../core/token/detector.js';
+import { detectChainOnlyInput, isSolanaAddress } from '../../core/token/detector.js';
 import { ITokenResolver, defaultTokenResolver } from '../../core/token/resolver.js';
 import { ITargetResolver, TargetResolver, InvestigationTarget } from '../../core/target/index.js';
 import { getNativeAssetForTicker } from '../../core/target/native-assets.js';
-import { getChainDisplayName } from '../../core/target/chain-resolver.js';
+import { getChainDisplayName, normalizeChain } from '../../core/target/chain-resolver.js';
 import { truncateAddress } from '../../core/synthesis/formatting.js';
 import { profiler } from '../../utils/profiler.js';
 import { TelegramProgressTracker } from './progress.js';
@@ -178,10 +178,21 @@ export class ProbeTelegramBot {
 
       if (resolution.status === 'AMBIGUOUS') {
         if (resolution.candidateIdentifier) {
-          this.investigationManager.setPendingClarification(chatId, {
-            type: 'token',
-            symbol: resolution.candidateIdentifier,
-          });
+          if (
+            resolution.candidateType === 'wallet' ||
+            /^0x[a-fA-F0-9]{40}$/i.test(resolution.candidateIdentifier) ||
+            isSolanaAddress(resolution.candidateIdentifier)
+          ) {
+            this.investigationManager.setPendingClarification(chatId, {
+              type: 'wallet',
+              address: resolution.candidateIdentifier,
+            });
+          } else {
+            this.investigationManager.setPendingClarification(chatId, {
+              type: 'token',
+              symbol: resolution.candidateIdentifier,
+            });
+          }
         }
         await ctx.reply(
           resolution.clarificationMessage ??
@@ -254,6 +265,28 @@ export class ProbeTelegramBot {
         await ctx.reply(TelegramMessages.tokenSelected(target.token.symbol, chainDisplayName, Boolean(native)), {
           reply_markup: TelegramKeyboards.tokenShortcuts(),
         });
+        return;
+      }
+
+      // 3b. Check if input was intended strictly as a wallet selection (standalone)
+      const isStandaloneWallet =
+        target.type === 'wallet' &&
+        !isQuestion &&
+        (trimmed.toLowerCase() === target.address.toLowerCase() ||
+          normalizeChain(trimmed) !== undefined ||
+          /^0x[a-fA-F0-9]{40}$/i.test(trimmed) ||
+          isSolanaAddress(trimmed));
+
+      if (isStandaloneWallet && target.type === 'wallet') {
+        this.investigationManager.clearPendingClarification(chatId);
+        this.investigationManager.clearActiveInvestigation(chatId);
+        this.investigationManager.createInvestigation({
+          telegramChatId: chatId,
+          target,
+        });
+
+        const chainDisplayName = getChainDisplayName(target.chain) || target.chain;
+        await ctx.reply(TelegramMessages.walletSelected(target.address, chainDisplayName));
         return;
       }
 

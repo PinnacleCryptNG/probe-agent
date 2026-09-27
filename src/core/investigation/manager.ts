@@ -21,12 +21,19 @@ export interface CreateInvestigationParams {
   initialQuestion?: string;
 }
 
-export interface PendingClarification {
-  type: 'token';
-  symbol: string;
-  selectedChain?: string;
-  timestamp: string;
-}
+export type PendingClarification =
+  | {
+      type: 'token';
+      symbol: string;
+      selectedChain?: string;
+      timestamp: string;
+    }
+  | {
+      type: 'wallet';
+      address: string;
+      selectedChain?: string;
+      timestamp: string;
+    };
 
 export class InvestigationManager {
   private investigations = new Map<string, Investigation>();
@@ -35,7 +42,9 @@ export class InvestigationManager {
 
   public setPendingClarification(
     chatId: number | string,
-    clarification: { type: 'token'; symbol: string; selectedChain?: string }
+    clarification:
+      | { type: 'token'; symbol: string; selectedChain?: string }
+      | { type: 'wallet'; address: string; selectedChain?: string }
   ): void {
     this.pendingClarifications.set(String(chatId), {
       ...clarification,
