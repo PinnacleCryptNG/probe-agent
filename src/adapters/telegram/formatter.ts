@@ -30,6 +30,13 @@ export function getInvestigationHeader(target?: InvestigationTarget, fallbackSym
       (target.chain ? target.chain.charAt(0).toUpperCase() + target.chain.slice(1) : 'Ethereum');
     return `🔎 WALLET INVESTIGATION\n${addr} · ${chain}`;
   }
+  if (target?.type === 'contract') {
+    const addr = target.label || truncateAddress(target.address);
+    const chain =
+      target.chainDisplayName ||
+      (target.chain ? target.chain.charAt(0).toUpperCase() + target.chain.slice(1) : 'Ethereum');
+    return `🔎 CONTRACT ADDRESS\n${addr} · ${chain}`;
+  }
   if (target?.type === 'transaction') {
     const hash =
       target.transactionHash.length > 14

@@ -5,7 +5,7 @@ import { generateId } from '../../utils/ids.js';
 import { logger } from '../../utils/logger.js';
 import { CapabilitySelector } from './capability-selector.js';
 import { RequirementFormulator } from './requirements.js';
-import { isFuturePricePrediction } from './prediction.js';
+import { isFuturePricePrediction, isOffChainRoadmapOrIntent } from './prediction.js';
 import {
   InvestigationPlan,
   PlannerContext,
@@ -65,6 +65,8 @@ export class InvestigationPlanner {
           ? target.address
           : target?.type === 'chain'
           ? target.chainDisplayName
+          : target?.type === 'contract'
+          ? target.address
           : target?.transactionHash,
       chain,
     });
@@ -162,25 +164,19 @@ export class InvestigationPlanner {
   public classifyIntent(question: string, context?: PlannerContext): PlannerIntent {
     const q = question.toLowerCase();
 
-    // 0a. Transaction target or transaction hash
-    if (context?.target?.type === 'transaction' || /\b0x[a-fA-F0-9]{64}\b/i.test(q)) {
-      return 'transaction_inspection';
+    // 0a. Explicit off-chain roadmap, dev team intent, or marketing plan refusal
+    if (isOffChainRoadmapOrIntent(question)) {
+      return 'unknown';
     }
 
-    // 0b. Wallet target priority routing
-    if (context?.target?.type === 'wallet') {
-      if (
-        q.includes('funder') ||
-        q.includes('funded') ||
-        q.includes('funding') ||
-        q.includes('counterpart') ||
-        q.includes('related') ||
-        q.includes('connected') ||
-        q.includes('cluster')
-      ) {
-        return 'wallet_relationships';
-      }
-      return 'wallet_activity';
+    // 0b. Genuine future price prediction checks (e.g. "Will ETH pump tomorrow?", "Will ETH hit $5,000?", "Can this go to $10?")
+    if (isFuturePricePrediction(question)) {
+      return 'unknown';
+    }
+
+    // 0c. Transaction target or explicit 66-char transaction hash
+    if (context?.target?.type === 'transaction' || /\b0x[a-fA-F0-9]{64}\b/i.test(q)) {
+      return 'transaction_inspection';
     }
 
     // 1. Check for follow-up context pronouns or references (e.g. "those tokens afterward", "why?", "who did that?")
@@ -219,17 +215,14 @@ export class InvestigationPlanner {
       return 'wallet_activity';
     }
 
-    // 2. Genuine future price prediction checks (e.g. "Will ETH pump tomorrow?", "Will ETH hit $5,000?")
-    if (isFuturePricePrediction(question)) {
-      return 'unknown';
-    }
-
-    // 3. Large transactions & transfers
+    // 2. Large transactions & transfers
     if (
       q.includes('biggest transaction') ||
       q.includes('biggest transactions') ||
       q.includes('largest transaction') ||
       q.includes('largest transactions') ||
+      q.includes('large transaction') ||
+      q.includes('large transactions') ||
       q.includes('large transfer') ||
       q.includes('large transfers') ||
       q.includes('biggest eth transaction') ||
@@ -240,12 +233,17 @@ export class InvestigationPlanner {
       return 'large_transactions';
     }
 
-    // 4. Accumulation / buyers
+    // 3. Accumulation / buyers
     if (
       q.includes('accumulate') ||
       q.includes('accumulating') ||
       q.includes('who bought') ||
       q.includes('who is buying') ||
+      q.includes("who's buying") ||
+      q.includes('whos buying') ||
+      q.includes('who is accumulating') ||
+      q.includes("who's accumulating") ||
+      q.includes('whos accumulating') ||
       q.includes('who were the buyers') ||
       q.includes('who were the biggest buyers') ||
       q.includes('biggest buyers') ||
@@ -258,12 +256,17 @@ export class InvestigationPlanner {
       return 'accumulation';
     }
 
-    // 5. Distribution / sellers
+    // 4. Distribution / sellers
     if (
       q.includes('dump') ||
       q.includes('dumping') ||
       q.includes('who sold') ||
       q.includes('who is selling') ||
+      q.includes("who's selling") ||
+      q.includes('whos selling') ||
+      q.includes('who is dumping') ||
+      q.includes("who's dumping") ||
+      q.includes('whos dumping') ||
       q.includes('who were the sellers') ||
       q.includes('who were the biggest sellers') ||
       q.includes('biggest sellers') ||
@@ -275,7 +278,7 @@ export class InvestigationPlanner {
       return 'distribution';
     }
 
-    // 6. Cohort flows & whales (e.g. "Who are the biggest whales on Ethereum?", "What is smart money doing on Solana?")
+    // 5. Cohort flows & whales (e.g. "Who are the biggest whales on Ethereum?", "Where are funds flowing?")
     if (
       q.includes('biggest whales') ||
       q.includes('biggest whale') ||
@@ -283,21 +286,45 @@ export class InvestigationPlanner {
       q.includes('whale') ||
       q.includes('smart money') ||
       q.includes('cohort') ||
+      q.includes('funds flowing') ||
+      q.includes('money flowing') ||
+      q.includes('fund flow') ||
+      q.includes('fund flows') ||
       q.includes('flow') ||
       q.includes('flows')
     ) {
       return 'flow_analysis';
     }
 
-    // 7. Holder analysis (supply distribution, top holders)
+    // 6. Holder analysis (supply distribution, top holders, who holds it)
     if (
       q.includes('holder') ||
       q.includes('holders') ||
+      q.includes('who holds') ||
+      q.includes('who is holding') ||
       q.includes('who owns') ||
       q.includes('concentration') ||
       q.includes('supply distribution')
     ) {
       return 'holder_analysis';
+    }
+
+    // 7. Wallet relationships (counterparties, related wallets, first funder, who funded it)
+    if (
+      q.includes('related wallet') ||
+      q.includes('related wallets') ||
+      q.includes('connected') ||
+      q.includes('first funder') ||
+      q.includes('who funded') ||
+      q.includes('funder') ||
+      q.includes('funded') ||
+      q.includes('funding') ||
+      q.includes('who does it interact with') ||
+      q.includes('interact with') ||
+      q.includes('counterpart') ||
+      q.includes('cluster')
+    ) {
+      return 'wallet_relationships';
     }
 
     // 8. Activity change / sudden movement / price pump
@@ -317,6 +344,7 @@ export class InvestigationPlanner {
       q.includes('why is activity changing') ||
       q.includes('activity change') ||
       q.includes('activity changing') ||
+      q.includes('recent activity') ||
       q.includes('why is') ||
       q.includes('why are') ||
       q.includes('why did') ||
@@ -333,16 +361,7 @@ export class InvestigationPlanner {
       return 'activity_change';
     }
 
-    // 9. Off-chain roadmap or developer secret requests
-    if (
-      q.includes('marketing strategy') ||
-      q.includes('roadmap') ||
-      q.includes('dev team secret')
-    ) {
-      return 'unknown';
-    }
-
-    // 10. Historical comparison
+    // 9. Historical comparison
     if (
       q.includes('unusual') ||
       q.includes('compared to') ||
@@ -355,33 +374,19 @@ export class InvestigationPlanner {
       return 'historical_comparison';
     }
 
-    // 11. Wallet relationships (counterparties, related wallets, first funder, who owns)
-    if (
-      q.includes('related wallet') ||
-      q.includes('related wallets') ||
-      q.includes('connected') ||
-      q.includes('first funder') ||
-      q.includes('who funded') ||
-      q.includes('funder') ||
-      q.includes('who owns') ||
-      q.includes('owner') ||
-      q.includes('counterpart')
-    ) {
-      return 'wallet_relationships';
-    }
-
-    // 12. Specific wallet activity & balances
+    // 10. Specific wallet activity & balances
     const isWalletContext =
+      context?.target?.type === 'wallet' ||
       context?.targetWalletAddress !== undefined ||
       /\b0x[a-fA-F0-9]{40}\b/i.test(q);
 
     if (
-      q.includes('wallet') ||
       q.includes('which wallets') ||
       q.includes('most active') ||
       q.includes('target address') ||
       (isWalletContext &&
-        (q.includes('balance') ||
+        (q.includes('wallet') ||
+          q.includes('balance') ||
           q.includes('holding') ||
           q.includes('portfolio') ||
           q.includes('worth') ||
@@ -394,7 +399,7 @@ export class InvestigationPlanner {
       return 'wallet_activity';
     }
 
-    // 13. DEX trading
+    // 11. DEX trading
     if (
       q.includes('dex') ||
       q.includes('swap') ||
@@ -405,8 +410,22 @@ export class InvestigationPlanner {
       return 'dex_activity';
     }
 
-    // 14. General token activity
+    // 12. General token activity
     if (q.includes('activity') || q.includes('price') || q.includes('status') || q.includes('info')) {
+      return 'token_activity';
+    }
+
+    // 13. Context-driven defaults if question had no explicit keywords
+    if (context?.target?.type === 'wallet') {
+      return 'wallet_activity';
+    }
+    if (context?.target?.type === 'chain') {
+      return 'flow_analysis';
+    }
+    if (context?.target?.type === 'token') {
+      return 'token_activity';
+    }
+    if (context?.target?.type === 'contract') {
       return 'token_activity';
     }
 

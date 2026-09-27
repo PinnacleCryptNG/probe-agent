@@ -290,6 +290,20 @@ export class ProbeTelegramBot {
         return;
       }
 
+      // 3c. Check if input was intended strictly as a contract selection (standalone or user correction)
+      if (target.type === 'contract' && (!isQuestion || resolution.source === 'user_correction')) {
+        this.investigationManager.clearPendingClarification(chatId);
+        this.investigationManager.clearActiveInvestigation(chatId);
+        this.investigationManager.createInvestigation({
+          telegramChatId: chatId,
+          target,
+        });
+
+        const chainDisplayName = getChainDisplayName(target.chain) || target.chain;
+        await ctx.reply(TelegramMessages.contractSelected(target.address, chainDisplayName));
+        return;
+      }
+
       // 4. Investigation question turn
       this.investigationManager.clearPendingClarification(chatId);
       let investigationId = activeInv?.id;
@@ -309,6 +323,10 @@ export class ProbeTelegramBot {
           ? !activeInv.target ||
             activeInv.target.type !== 'wallet' ||
             activeInv.target.address.toLowerCase() !== target.address.toLowerCase()
+          : target.type === 'contract'
+          ? !activeInv.target ||
+            activeInv.target.type !== 'contract' ||
+            activeInv.target.address.toLowerCase() !== target.address.toLowerCase()
           : true);
 
       if (isNewTarget && resolution.source !== 'existing_context') {
@@ -327,7 +345,7 @@ export class ProbeTelegramBot {
           ? target.token.symbol
           : target.type === 'chain'
           ? target.chainDisplayName
-          : target.type === 'wallet'
+          : target.type === 'wallet' || target.type === 'contract'
           ? target.label || truncateAddress(target.address)
           : truncateAddress(target.transactionHash);
 

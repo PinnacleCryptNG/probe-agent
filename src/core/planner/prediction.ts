@@ -22,8 +22,12 @@ export function isFuturePricePrediction(question: string): boolean {
   const q = trimmed.toLowerCase();
 
   // 1. Explicit future price action questions:
-  // e.g. "Will ETH hit $5,000?", "Will SOL pump tomorrow?", "Will it reach 100?"
-  if (/\bwill\s+.*?\b(?:hit|reach|pump|dump|drop|moon|crash|go\s+up|go\s+down)\b/i.test(q)) {
+  // e.g. "Will ETH hit $5,000?", "Will SOL pump tomorrow?", "Will it reach 100?", "Can this go to $10?"
+  if (
+    /\b(?:will|can|could|is)\s+.*?\b(?:hit|reach|pump|dump|drop|moon|crash|go\s+to|go\s+up|go\s+down)\s*(?:\$?\d+|\bsoon\b|\btomorrow\b|\bnext\b)/i.test(q) ||
+    /\bwill\s+.*?\b(?:hit|reach|pump|dump|drop|moon|crash|go\s+up|go\s+down)\b/i.test(q) ||
+    /\bcan\s+(?:this|it|token|\$?\w+)\s+(?:go\s+to|reach|hit)\s+\$?\d+/i.test(q)
+  ) {
     return true;
   }
 
@@ -47,4 +51,39 @@ export function isFuturePricePrediction(question: string): boolean {
   }
 
   return false;
+}
+
+/**
+ * Evaluates whether a question is genuinely asking about off-chain developer roadmap,
+ * marketing strategy, or internal team intent that cannot be verified on-chain.
+ *
+ * Examples that ARE off-chain intent:
+ * - "What is the team's roadmap?"
+ * - "What is the developer intent?"
+ * - "What is their marketing strategy?"
+ *
+ * Examples that are NOT off-chain intent:
+ * - "Who is buying?"
+ * - "Who's buying?"
+ * - "Who is selling?"
+ * - "Biggest transactions"
+ * - "What is happening?"
+ */
+export function isOffChainRoadmapOrIntent(question: string): boolean {
+  const trimmed = question.trim();
+  if (!trimmed) return false;
+  const q = trimmed.toLowerCase();
+
+  return (
+    q.includes('roadmap') ||
+    q.includes('marketing strategy') ||
+    q.includes('marketing plan') ||
+    q.includes('developer intent') ||
+    q.includes('dev team secret') ||
+    q.includes('dev team plan') ||
+    q.includes('team roadmap') ||
+    q.includes("team's roadmap") ||
+    q.includes('founder intent') ||
+    q.includes('off-chain plan')
+  );
 }

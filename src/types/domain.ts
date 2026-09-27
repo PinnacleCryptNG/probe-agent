@@ -32,8 +32,6 @@ export const TokenContextSchema = z.object({
 
 export type TokenContext = z.infer<typeof TokenContextSchema>;
 
-export type InvestigationTargetType = 'token' | 'chain' | 'wallet' | 'transaction';
-
 export const TokenTargetSchema = z.object({
   type: z.literal('token'),
   token: TokenContextSchema,
@@ -77,11 +75,27 @@ export const TransactionTargetSchema = z.object({
 
 export type TransactionTarget = z.infer<typeof TransactionTargetSchema>;
 
+export type InvestigationTargetType = 'token' | 'chain' | 'wallet' | 'transaction' | 'contract';
+
+export const ContractTargetSchema = z.object({
+  type: z.literal('contract'),
+  address: z.string(),
+  chain: z.string(),
+  chainDisplayName: z.string().optional(),
+  contractType: z.string().optional(),
+  label: z.string().optional(),
+  rawIdentifier: z.string().optional(),
+  explicitChain: z.string().optional(),
+});
+
+export type ContractTarget = z.infer<typeof ContractTargetSchema>;
+
 export const InvestigationTargetSchema = z.discriminatedUnion('type', [
   TokenTargetSchema,
   ChainTargetSchema,
   WalletTargetSchema,
   TransactionTargetSchema,
+  ContractTargetSchema,
 ]);
 
 export type InvestigationTarget = z.infer<typeof InvestigationTargetSchema>;

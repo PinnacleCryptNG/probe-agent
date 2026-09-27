@@ -199,11 +199,6 @@ const NATIVE_ASSET_CATALOG: Record<string, { ticker: string; name: string; addre
     name: 'Plasma',
     address: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
   },
-  robinhood: {
-    ticker: 'ETH',
-    name: 'Robinhood Chain',
-    address: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
-  },
   viction: {
     ticker: 'VIC',
     name: 'Viction',

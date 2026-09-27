@@ -13,7 +13,7 @@ import { InvestigationTurnRequest, InvestigationTurnResult } from './types.js';
 import { ITargetResolver, defaultTargetResolver, InvestigationTarget } from '../target/index.js';
 import { getNativeAssetForChain } from '../target/native-assets.js';
 import { getChainDisplayName } from '../target/chain-resolver.js';
-import { isFuturePricePrediction } from '../planner/prediction.js';
+import { isFuturePricePrediction, isOffChainRoadmapOrIntent } from '../planner/prediction.js';
 import { truncateAddress } from '../synthesis/formatting.js';
 
 import { detectChallenge } from '../challenge/detector.js';
@@ -261,6 +261,16 @@ export class InvestigationOrchestrator {
         resolvedAt: new Date().toISOString(),
         decimals: 18,
       };
+    } else if (resolvedTarget.type === 'contract') {
+      effectiveToken = undefined;
+      tokenCtxForSynthesis = {
+        address: resolvedTarget.address,
+        symbol: resolvedTarget.label || truncateAddress(resolvedTarget.address),
+        name: resolvedTarget.label || truncateAddress(resolvedTarget.address),
+        chain: resolvedTarget.chain as any,
+        resolvedAt: new Date().toISOString(),
+        decimals: 18,
+      };
     } else {
       effectiveToken = undefined;
       tokenCtxForSynthesis = {
@@ -426,6 +436,38 @@ export class InvestigationOrchestrator {
         error: {
           code: 'PLANNER_ERROR',
           message: `Investigation planner failure: ${errMsg}`,
+        },
+      };
+    }
+
+    // 2.5. Dedicated handling for contract targets (unsupported smart contract capability)
+    if (resolvedTarget.type === 'contract') {
+      const contractLimitationMessage =
+        "🔎 CONTRACT ADDRESS\n\nI can identify this address, but PROBE does not currently have a dedicated smart-contract investigation mode for this contract type.";
+
+      this.manager.addMessage(currentInv.id, 'assistant', contractLimitationMessage, {
+        turnId,
+        capabilityUnavailable: true,
+        contractAddress: resolvedTarget.address,
+      });
+
+      try {
+        this.manager.transitionState(currentInv.id, 'ANSWERED');
+      } catch {
+        // Safe transition
+      }
+
+      return {
+        investigationId: currentInv.id,
+        turnId,
+        status: 'capability_unavailable',
+        question: trimmedQuestion,
+        target: resolvedTarget,
+        plan,
+        evidence: [],
+        error: {
+          code: 'UNSUPPORTED_CONTRACT_TYPE',
+          message: contractLimitationMessage,
         },
       };
     }
@@ -860,7 +902,6 @@ export class InvestigationOrchestrator {
    */
   private formulateClarificationQuestions(plan: InvestigationPlan, _token: TokenContext): string[] {
     const questions: string[] = [];
-    const qLower = (plan.question || '').toLowerCase();
 
     // 1. Future price prediction requests (Requirement 6)
     const isPricePrediction = isFuturePricePrediction(plan.question || '');
@@ -873,11 +914,7 @@ export class InvestigationOrchestrator {
     }
 
     // 2. Off-chain roadmap or team intent requests (Requirement 6)
-    const isOffChainIntent =
-      qLower.includes('roadmap') ||
-      qLower.includes('marketing') ||
-      qLower.includes('dev team') ||
-      plan.unresolvedRequirements.some((r) => r.toLowerCase().includes('roadmap') || r.toLowerCase().includes('intent'));
+    const isOffChainIntent = isOffChainRoadmapOrIntent(plan.question || '');
 
     if (isOffChainIntent) {
       questions.push(

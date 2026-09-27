@@ -87,6 +87,22 @@ export class RequirementFormulator {
     const defaultDate = timeWindow.dateRange;
 
     // ==========================================
+    // 0. CONTRACT INVESTIGATION TARGET (Unsupported)
+    // ==========================================
+    if (target?.type === 'contract') {
+      return [
+        {
+          id: generateId('req'),
+          concept: 'smart contract capability limitation',
+          priority: 'required',
+          rationale: 'PROBE does not currently have a dedicated smart-contract investigation mode for this contract type',
+          candidateCapabilities: [],
+          parameters: { address: target.address, chain },
+        },
+      ];
+    }
+
+    // ==========================================
     // 1. TRANSACTION INVESTIGATION TARGET
     // ==========================================
     if (target?.type === 'transaction' || intent === 'transaction_inspection') {
@@ -115,7 +131,13 @@ export class RequirementFormulator {
         (q.match(/0x[a-fA-F0-9]{40}/)?.[0] ?? '');
 
       // Specific question: first funder
-      if (q.includes('funder') || q.includes('funded') || q.includes('funding') || q.includes('who funded')) {
+      if (
+        (intent === 'wallet_relationships' && (q.includes('funder') || q.includes('funded') || q.includes('funding'))) ||
+        q.includes('funder') ||
+        q.includes('funded') ||
+        q.includes('funding') ||
+        q.includes('who funded')
+      ) {
         return [
           {
             id: generateId('req'),
@@ -137,7 +159,12 @@ export class RequirementFormulator {
       }
 
       // Specific question: counterparties
-      if (q.includes('counterpart') || q.includes('who does it interact with') || q.includes('interact with')) {
+      if (
+        (intent === 'wallet_relationships' && (q.includes('counterpart') || q.includes('interact'))) ||
+        q.includes('counterpart') ||
+        q.includes('who does it interact with') ||
+        q.includes('interact with')
+      ) {
         return [
           {
             id: generateId('req'),
@@ -151,7 +178,13 @@ export class RequirementFormulator {
       }
 
       // Specific question: related wallets
-      if (q.includes('related wallet') || q.includes('related wallets') || q.includes('connected') || q.includes('cluster')) {
+      if (
+        (intent === 'wallet_relationships' && (q.includes('related') || q.includes('connected') || q.includes('cluster'))) ||
+        q.includes('related wallet') ||
+        q.includes('related wallets') ||
+        q.includes('connected') ||
+        q.includes('cluster')
+      ) {
         return [
           {
             id: generateId('req'),
@@ -165,7 +198,17 @@ export class RequirementFormulator {
       }
 
       // Specific question: biggest transactions / transaction history
-      if (q.includes('transaction') || q.includes('transfer') || q.includes('history') || q.includes('tx')) {
+      if (
+        intent === 'large_transactions' ||
+        q.includes('biggest transaction') ||
+        q.includes('biggest transactions') ||
+        q.includes('largest transaction') ||
+        q.includes('largest transactions') ||
+        q.includes('transaction') ||
+        q.includes('transfer') ||
+        q.includes('history') ||
+        q.includes('tx')
+      ) {
         return [
           {
             id: generateId('req'),

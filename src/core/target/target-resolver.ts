@@ -76,12 +76,53 @@ const WALLET_CONTEXT_KEYWORDS = [
   'transactions for', 'balance of',
 ];
 
+export interface UserCorrectionDetection {
+  isCorrection: boolean;
+  correctionType?: 'contract' | 'token_contract' | 'wallet';
+}
+
+export function detectUserCorrection(text: string): UserCorrectionDetection {
+  const q = text.trim().toLowerCase();
+
+  // 1. Explicit token contract correction (e.g. "that's a token contract", "it's a token contract", "token contract not wallet")
+  if (
+    /\b(?:that's|thats|it's|its|this\s+is|that\s+is)\s+(?:a\s+|the\s+)?token\s+contract\b/i.test(q) ||
+    /\btoken\s+contract\s+not\s+wallet\b/i.test(q) ||
+    /^(?:token\s+contract|a\s+token\s+contract|the\s+token\s+contract)$/i.test(q)
+  ) {
+    return { isCorrection: true, correctionType: 'token_contract' };
+  }
+
+  // 2. Explicit contract correction (e.g. "that's a contract", "it's a contract", "not a wallet", "it's not a wallet")
+  if (
+    /\b(?:that's|thats|it's|its|this\s+is|that\s+is)\s+(?:a\s+|the\s+)?(?:smart\s+)?contract\b/i.test(q) ||
+    /\b(?:not\s+a\s+wallet|not\s+wallet|it's\s+not\s+a\s+wallet|its\s+not\s+a\s+wallet|is\s+not\s+a\s+wallet)\b/i.test(q) ||
+    /\bcontract\s+not\s+wallet\b/i.test(q) ||
+    /^(?:contract|a\s+contract|the\s+contract|smart\s+contract|a\s+smart\s+contract)$/i.test(q)
+  ) {
+    return { isCorrection: true, correctionType: 'contract' };
+  }
+
+  // 3. Explicit wallet correction (e.g. "that's a wallet", "it's a wallet", "not a contract", "not a token")
+  if (
+    /\b(?:that's|thats|it's|its|this\s+is|that\s+is)\s+(?:a\s+|the\s+)?wallet\b/i.test(q) ||
+    /\b(?:not\s+a\s+contract|not\s+contract|not\s+a\s+token|not\s+token|it's\s+not\s+a\s+contract|it's\s+not\s+a\s+token|its\s+not\s+a\s+contract|its\s+not\s+a\s+token)\b/i.test(q) ||
+    /\bwallet\s+not\s+contract\b/i.test(q) ||
+    /^(?:wallet|a\s+wallet|the\s+wallet)$/i.test(q)
+  ) {
+    return { isCorrection: true, correctionType: 'wallet' };
+  }
+
+  return { isCorrection: false };
+}
+
 export class TargetResolver implements ITargetResolver {
   private readonly tokenResolver: ITokenResolver;
   private pendingByChatId = new Map<
     string,
     | { type: 'token'; symbol: string; selectedChain?: string; timestamp: number }
     | { type: 'wallet'; address: string; selectedChain?: string; timestamp: number }
+    | { type: 'contract'; address: string; selectedChain?: string; timestamp: number }
     | { type: 'transaction'; transactionHash: string; selectedChain?: string; timestamp: number }
   >();
 
@@ -98,6 +139,7 @@ export class TargetResolver implements ITargetResolver {
     pending:
       | { type: 'token'; symbol: string; selectedChain?: string }
       | { type: 'wallet'; address: string; selectedChain?: string }
+      | { type: 'contract'; address: string; selectedChain?: string }
       | { type: 'transaction'; transactionHash: string; selectedChain?: string }
   ): void {
     this.pendingByChatId.set(String(chatId), {
@@ -111,6 +153,7 @@ export class TargetResolver implements ITargetResolver {
   ):
     | { type: 'token'; symbol: string; selectedChain?: string; timestamp: number }
     | { type: 'wallet'; address: string; selectedChain?: string; timestamp: number }
+    | { type: 'contract'; address: string; selectedChain?: string; timestamp: number }
     | { type: 'transaction'; transactionHash: string; selectedChain?: string; timestamp: number }
     | undefined {
     return this.pendingByChatId.get(String(chatId));
@@ -197,12 +240,139 @@ export class TargetResolver implements ITargetResolver {
       textWithoutChain = question.replace(explicitChainInfo.rawMatch, ' ');
     }
 
-    // Step 0A: Check if answering a pending wallet clarification with a chain
-    if (pendingContext && pendingContext.type === 'wallet') {
+    // Step 0: Precedence Rule 0 - Explicit user correction in current message
+    const correction = detectUserCorrection(question);
+    if (correction.isCorrection) {
+      const explicitAddressInMsg = question.match(/\b0x[a-fA-F0-9]{40}\b/i)?.[0];
+      const targetAddress =
+        explicitAddressInMsg ||
+        (options.existingTarget?.type === 'wallet' ? options.existingTarget.address : undefined) ||
+        (options.existingTarget?.type === 'contract' ? options.existingTarget.address : undefined) ||
+        (options.existingTarget?.type === 'token' ? options.existingTarget.token.address : undefined) ||
+        (pendingContext && (pendingContext.type === 'wallet' || pendingContext.type === 'contract') ? pendingContext.address : undefined);
+
+      const targetChainForCorrection =
+        explicitChainInfo?.chain ||
+        (options.existingTarget?.type === 'token'
+          ? options.existingTarget.token.chain
+          : options.existingTarget?.chain) ||
+        contextChain ||
+        'ethereum';
+
+      if (targetAddress) {
+        if (chatIdKey) {
+          this.clearPendingResolution(chatIdKey);
+        }
+
+        if (correction.correctionType === 'wallet') {
+          const walletTarget: InvestigationTarget = {
+            type: 'wallet',
+            address: targetAddress.toLowerCase(),
+            chain: targetChainForCorrection,
+            rawIdentifier: targetAddress,
+            explicitChain: targetChainForCorrection,
+          };
+          logger.info('User correction resolved target to wallet', {
+            address: targetAddress,
+            chain: targetChainForCorrection,
+          });
+          return {
+            status: 'RESOLVED',
+            target: walletTarget,
+            source: 'user_correction',
+          };
+        }
+
+        // User corrected: "that's a contract" or "that's a token contract" or "not a wallet"
+        // Deterministically re-resolve the address using Nansen search/token-information
+        const candidate: TokenCandidate = {
+          identifier: targetAddress,
+          type: 'address',
+          detectedChain: targetChainForCorrection,
+        };
+        const res = await this.resolveCandidate(candidate);
+
+        if (res.status === 'RESOLVED' && res.token) {
+          // Outcome A: Verified token contract -> target becomes TOKEN
+          logger.info('User correction verified address as token contract', {
+            address: targetAddress,
+            token: res.token.symbol,
+            chain: res.token.chain,
+          });
+          return {
+            status: 'RESOLVED',
+            target: {
+              type: 'token',
+              token: res.token,
+              chain: res.token.chain,
+              rawIdentifier: targetAddress,
+              explicitChain: targetChainForCorrection,
+            },
+            source: 'user_correction',
+          };
+        }
+
+        if (correction.correctionType === 'token_contract') {
+          // Outcome C: User specifically asked for token contract, but resolution could not verify it
+          logger.info('User claimed token contract but could not be verified', {
+            address: targetAddress,
+            chain: targetChainForCorrection,
+          });
+          return {
+            status: 'AMBIGUOUS',
+            candidateIdentifier: targetAddress,
+            candidateType: 'contract',
+            clarificationMessage: "Is this a token contract you'd like me to investigate, or another smart contract?",
+            source: 'user_correction',
+          };
+        }
+
+        // Outcome B: Verified non-token contract -> target becomes CONTRACT
+        const contractTarget: InvestigationTarget = {
+          type: 'contract',
+          address: targetAddress.toLowerCase(),
+          chain: targetChainForCorrection,
+          rawIdentifier: targetAddress,
+          explicitChain: targetChainForCorrection,
+        };
+        logger.info('User correction resolved address to non-token contract', {
+          address: targetAddress,
+          chain: targetChainForCorrection,
+        });
+        return {
+          status: 'RESOLVED',
+          target: contractTarget,
+          source: 'user_correction',
+        };
+      }
+    }
+
+    // Step 0A: Check if answering a pending wallet/address clarification with a chain
+    if (pendingContext && (pendingContext.type === 'wallet' || pendingContext.type === 'contract')) {
       if (resolvedChainFromInput) {
         if (chatIdKey) {
           this.clearPendingResolution(chatIdKey);
         }
+
+        if (pendingContext.type === 'contract') {
+          const contractTarget: InvestigationTarget = {
+            type: 'contract',
+            address: pendingContext.address,
+            chain: resolvedChainFromInput,
+            rawIdentifier: pendingContext.address,
+            explicitChain: resolvedChainFromInput,
+          };
+          logger.info('Contract target resolved via pending clarification', {
+            address: pendingContext.address,
+            chain: resolvedChainFromInput,
+          });
+          return {
+            status: 'RESOLVED',
+            target: contractTarget,
+            source: 'explicit_message_with_chain',
+          };
+        }
+
         const walletTarget: InvestigationTarget = {
           type: 'wallet',
           address: pendingContext.address,
@@ -346,13 +516,13 @@ export class TargetResolver implements ITargetResolver {
         });
       }
       const chains = ['Ethereum', 'Base', 'BNB', 'Arbitrum', 'Polygon', 'Optimism'];
-      logger.info('Wallet candidate detected without chain; requesting clarification', { address: walletMatch.address });
+      logger.info('Address candidate detected without chain; requesting clarification', { address: walletMatch.address });
       return {
         status: 'AMBIGUOUS',
         candidateIdentifier: walletMatch.address,
         candidateType: 'wallet',
         availableChains: chains,
-        clarificationMessage: TelegramMessages.ambiguousSymbol(walletMatch.address, chains),
+        clarificationMessage: TelegramMessages.ambiguousAddress(walletMatch.address, chains),
         source: 'explicit_message',
       };
     }
@@ -615,6 +785,8 @@ export class TargetResolver implements ITargetResolver {
             ? options.existingTarget.address
             : options.existingTarget.type === 'chain'
             ? options.existingTarget.chainDisplayName
+            : options.existingTarget.type === 'contract'
+            ? options.existingTarget.address
             : options.existingTarget.transactionHash,
       });
 

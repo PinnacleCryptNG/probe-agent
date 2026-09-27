@@ -215,19 +215,38 @@ export class TokenResolver implements ITokenResolver {
         };
       }
 
-      const token: TokenContext = {
-        address: candidate.identifier,
-        symbol: 'TOKEN',
-        name: `Token ${candidate.identifier.slice(0, 8)}...`,
-        chain: candidate.detectedChain || 'ethereum',
-        resolvedAt: new Date().toISOString(),
+      const addrLower = candidate.identifier.toLowerCase();
+      const KNOWN_TOKENS: Record<string, { symbol: string; name: string; chain: string }> = {
+        '0x6982508145454ce325ddbe47a25d4ec3d2311933': { symbol: 'PEPE', name: 'Pepe', chain: 'ethereum' },
+        '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': { symbol: 'WETH', name: 'Wrapped Ether', chain: 'ethereum' },
+        '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': { symbol: 'WBTC', name: 'Wrapped Bitcoin', chain: 'ethereum' },
+        '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48': { symbol: 'USDC', name: 'USD Coin', chain: 'ethereum' },
+        '0xdac17f958d2ee523a2206206994597c13d831ec7': { symbol: 'USDT', name: 'Tether USD', chain: 'ethereum' },
+        '0x6b175474e89094c44da98b954eedeac495271d0f': { symbol: 'DAI', name: 'Dai Stablecoin', chain: 'ethereum' },
       };
 
+      const known = KNOWN_TOKENS[addrLower];
+      if (known) {
+        const token: TokenContext = {
+          address: addrLower,
+          symbol: known.symbol,
+          name: known.name,
+          chain: candidate.detectedChain || known.chain,
+          resolvedAt: new Date().toISOString(),
+        };
+        return {
+          status: 'RESOLVED',
+          token,
+          candidate,
+          detectedChain: token.chain,
+          creditCost: 0,
+        };
+      }
+
       return {
-        status: 'RESOLVED',
-        token,
+        status: 'NOT_FOUND',
         candidate,
-        detectedChain: token.chain,
+        failureReason: 'TOKEN_NOT_FOUND',
         creditCost: 0,
       };
     }

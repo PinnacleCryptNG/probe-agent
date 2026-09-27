@@ -22,7 +22,7 @@ export const PROBE_CONSTANTS = {
   SUPPORTED_EVM_CHAINS: [
     'arbitrum', 'arc', 'avalanche', 'base', 'bitlayer', 'bnb', 'chiliz', 'citrea',
     'ethereum', 'gravity', 'hyperevm', 'iotaevm', 'katana', 'linea', 'mantle',
-    'metis', 'monad', 'optimism', 'plasma', 'polygon', 'robinhood', 'sei', 'sonic', 'viction'
+    'metis', 'monad', 'optimism', 'plasma', 'polygon', 'sei', 'sonic', 'viction'
   ] as const,
   SUPPORTED_NON_EVM_CHAINS: [
     'algorand', 'aptos', 'bitcoin', 'hyperliquid', 'injective', 'mantra', 'near',

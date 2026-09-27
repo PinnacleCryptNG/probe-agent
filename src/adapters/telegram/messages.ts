@@ -64,6 +64,31 @@ export const TelegramMessages = {
     ].join('\n');
   },
 
+  contractSelected(address: string, chainDisplayName?: string): string {
+    const shortAddr = `${address.slice(0, 6)}...${address.slice(-4)}`;
+    const header = chainDisplayName ? `🔎 ${shortAddr} · ${chainDisplayName}` : `🔎 ${shortAddr}`;
+    return [
+      '🔎 CONTRACT ADDRESS',
+      header,
+      '',
+      'I can identify this address, but PROBE does not currently have a dedicated smart-contract investigation mode for this contract type.',
+    ].join('\n');
+  },
+
+  ambiguousAddress(address: string, chains: string[]): string {
+    const shortAddr = `${address.slice(0, 6)}...${address.slice(-4)}`;
+    return [
+      '🔎 Address detected',
+      '',
+      shortAddr,
+      '',
+      'I need to determine whether this address is a wallet or contract before investigating it.',
+      '',
+      'Which chain?',
+      ...chains.map((c) => `• ${c}`),
+    ].join('\n');
+  },
+
   chainOnly(chainName: string): string {
     return [
       `Which token on ${chainName}?`,
