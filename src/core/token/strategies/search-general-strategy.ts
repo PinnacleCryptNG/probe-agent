@@ -4,6 +4,7 @@ import { INansenClient } from '../../nansen/client.js';
 import { TokenContext } from '../../../types/domain.js';
 import { isExactAddressMatch } from '../address-utils.js';
 import { logger } from '../../../utils/logger.js';
+import { getNativeAssetForTicker } from '../../target/native-assets.js';
 
 export class SearchGeneralStrategy implements IResolutionStrategy {
   public readonly name = 'SearchGeneral';
@@ -123,14 +124,18 @@ export class SearchGeneralStrategy implements IResolutionStrategy {
         };
       }
 
-      // Special-case native gas tokens that are unambiguous (ETH on Ethereum, SOL on Solana)
-      if (targetSymbol === 'ETH') {
-        const ethOnMainnet = symbolMatches.find((t) => (t.chain as string)?.toLowerCase() === 'ethereum');
-        if (ethOnMainnet) {
+      // Check native asset registry for unambiguous native gas tokens (ETH on Ethereum, SOL on Solana, HYPE on Hyperliquid, APT on Aptos, etc.)
+      const nativeAsset = getNativeAssetForTicker(targetSymbol);
+      if (nativeAsset) {
+        const preferredChain = candidate.detectedChain?.toLowerCase() || nativeAsset.chain;
+        const nativeMatch =
+          symbolMatches.find((t) => (t.chain as string)?.toLowerCase() === preferredChain) ||
+          symbolMatches.find((t) => (t.chain as string)?.toLowerCase() === nativeAsset.chain);
+        if (nativeMatch) {
           return {
             matched: true,
             status: 'RESOLVED',
-            token: this.toTokenContext(ethOnMainnet, candidate),
+            token: this.toTokenContext(nativeMatch, candidate),
             exactMatch: true,
             rawResultsCount: tokens.length,
             creditCost: 0,
@@ -138,13 +143,13 @@ export class SearchGeneralStrategy implements IResolutionStrategy {
         }
       }
 
-      if (targetSymbol === 'SOL') {
-        const solOnSolana = symbolMatches.find((t) => (t.chain as string)?.toLowerCase() === 'solana');
-        if (solOnSolana) {
+      if (targetSymbol === 'BTC' || targetSymbol === 'WBTC') {
+        const btcOnEthereum = symbolMatches.find((t) => (t.chain as string)?.toLowerCase() === 'ethereum');
+        if (btcOnEthereum) {
           return {
             matched: true,
             status: 'RESOLVED',
-            token: this.toTokenContext(solOnSolana, candidate),
+            token: this.toTokenContext(btcOnEthereum, candidate),
             exactMatch: true,
             rawResultsCount: tokens.length,
             creditCost: 0,

@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { CapabilityName } from '../../types/capabilities.js';
-import { Finding, InvestigationMessage, TokenContext } from '../../types/domain.js';
+import { Finding, InvestigationMessage, InvestigationTarget, TokenContext } from '../../types/domain.js';
 
 export const PlannerIntentSchema = z.enum([
   'token_activity',
@@ -51,6 +51,7 @@ export interface InvestigationPlan {
   planId: string;
   question: string;
   intent: PlannerIntent;
+  target?: InvestigationTarget;
   tokenContext?: TokenContext;
   evidenceRequirements: PlanEvidenceRequirement[];
   selectedCapabilities: CapabilityName[];
@@ -62,7 +63,8 @@ export interface InvestigationPlan {
 }
 
 export interface PlannerContext {
-  token: TokenContext;
+  token?: TokenContext;
+  target?: InvestigationTarget;
   conversationHistory?: InvestigationMessage[];
   activeFindings?: Finding[];
   remainingCredits?: number;

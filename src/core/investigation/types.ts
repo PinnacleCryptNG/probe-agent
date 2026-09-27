@@ -1,4 +1,4 @@
-import { TokenContext } from '../../types/domain.js';
+import { InvestigationTarget, TokenContext } from '../../types/domain.js';
 import { EvidenceItem } from '../../types/evidence.js';
 import { InvestigationPlan } from '../planner/types.js';
 import { SynthesisResult } from '../synthesis/types.js';
@@ -22,6 +22,7 @@ export interface InvestigationTurnRequest {
   chatId?: number | string;
   question: string;
   token?: TokenContext;
+  target?: InvestigationTarget;
   userId?: string;
   maxCallsAllowed?: number;
   remainingCredits?: number;
@@ -35,6 +36,7 @@ export interface InvestigationTurnResult {
   status: InvestigationTurnStatus;
 
   question: string;
+  target?: InvestigationTarget;
   token?: TokenContext;
 
   plan?: InvestigationPlan;

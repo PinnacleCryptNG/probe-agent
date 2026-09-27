@@ -48,7 +48,14 @@ export function formatInvestigationResult(result: InvestigationTurnResult): stri
     return '⚠️ An unexpected issue occurred during the investigation. Please try again.';
   }
 
-  const symbol = result.plan?.tokenContext?.symbol ?? result.token?.symbol ?? 'ETH';
+  const symbol =
+    result.target?.type === 'token'
+      ? result.target.token.symbol
+      : result.target?.type === 'wallet'
+      ? result.target.label || `${result.target.address.slice(0, 6)}...${result.target.address.slice(-4)}`
+      : result.target?.type === 'chain'
+      ? result.target.chainDisplayName
+      : result.plan?.tokenContext?.symbol ?? result.token?.symbol ?? 'ETH';
 
   // Challenge Mode result formatting
   if (result.challenge) {

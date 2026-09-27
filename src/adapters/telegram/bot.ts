@@ -6,8 +6,11 @@ import { logger } from '../../utils/logger.js';
 import { formatInvestigationResult, splitTelegramMessage } from './formatter.js';
 import { TelegramKeyboards } from './keyboard.js';
 import { TelegramMessages } from './messages.js';
-import { detectChainOnlyInput, extractTokenCandidate, isOnlyTokenInput } from './token-extractor.js';
+import { extractTokenCandidate, isOnlyTokenInput } from './token-extractor.js';
+import { detectChainOnlyInput } from '../../core/token/detector.js';
 import { ITokenResolver, defaultTokenResolver } from '../../core/token/resolver.js';
+import { ITargetResolver, TargetResolver, InvestigationTarget } from '../../core/target/index.js';
+import { truncateAddress } from '../../core/synthesis/formatting.js';
 import { profiler } from '../../utils/profiler.js';
 import { TelegramProgressTracker } from './progress.js';
 
@@ -16,6 +19,7 @@ export interface TelegramBotDependencies {
   orchestrator: InvestigationOrchestrator;
   investigationManager?: InvestigationManager;
   tokenResolver?: ITokenResolver;
+  targetResolver?: ITargetResolver;
 }
 
 /**
@@ -28,12 +32,15 @@ export class ProbeTelegramBot {
   private readonly orchestrator: InvestigationOrchestrator;
   private readonly investigationManager: InvestigationManager;
   private readonly tokenResolver: ITokenResolver;
+  private readonly targetResolver: ITargetResolver;
 
   constructor(deps: TelegramBotDependencies) {
     this.bot = new Bot(deps.botToken);
     this.orchestrator = deps.orchestrator;
     this.investigationManager = deps.investigationManager ?? defaultManager;
     this.tokenResolver = deps.tokenResolver ?? defaultTokenResolver;
+    this.targetResolver =
+      deps.targetResolver ?? new TargetResolver({ tokenResolver: this.tokenResolver });
 
     this.registerCommands();
     this.registerCallbacks();
@@ -133,132 +140,143 @@ export class ProbeTelegramBot {
     profiler.recordStage('1. Telegram update received', tReceived, Date.now());
 
     try {
-      // 1. Check for chain-only input (Requirement 4)
-      const chainName = detectChainOnlyInput(trimmed);
-      if (chainName) {
-        await ctx.reply(TelegramMessages.chainOnly(chainName));
+      // 1. Inspect active session context and resolve target
+      const activeInv = this.investigationManager.getActiveInvestigationByChatId(chatId);
+      const existingTarget: InvestigationTarget | undefined =
+        activeInv?.target ??
+        (activeInv?.token
+          ? { type: 'token', token: activeInv.token, chain: activeInv.token.chain, rawIdentifier: activeInv.token.symbol }
+          : undefined);
+
+      const tTokenStart = Date.now();
+      const resolution = await this.targetResolver.resolve({
+        question: trimmed,
+        existingTarget,
+        chatId,
+      });
+      const tTokenEnd = Date.now();
+      profiler.recordStage('2. Target resolution', tTokenStart, tTokenEnd, {
+        status: resolution.status,
+        target: resolution.status === 'RESOLVED' ? resolution.target.rawIdentifier : resolution.candidateIdentifier,
+      });
+
+      if (resolution.status === 'AMBIGUOUS') {
+        await ctx.reply(
+          resolution.clarificationMessage ??
+            TelegramMessages.ambiguousSymbol(
+              resolution.candidateIdentifier ?? 'token',
+              resolution.availableChains ?? []
+            )
+        );
         return;
       }
 
-      // 2. Extract candidate token identifier and inspect active session context
-      const activeInv = this.investigationManager.getActiveInvestigationByChatId(chatId);
-      const tokenCandidate = extractTokenCandidate(trimmed);
+      if (resolution.status === 'INVALID_ADDRESS') {
+        await ctx.reply(TelegramMessages.unresolvedToken());
+        return;
+      }
 
-      // Check if this input was intended strictly as a token entry
-      const isStandaloneToken = isOnlyTokenInput(trimmed, tokenCandidate);
+      if (resolution.status === 'NEEDS_TARGET') {
+        await ctx.reply(TelegramMessages.missingToken());
+        return;
+      }
 
-      if (isStandaloneToken) {
-        if (!tokenCandidate || tokenCandidate.type === 'invalid_address') {
-          await ctx.reply(TelegramMessages.unresolvedToken());
-          return;
-        }
+      if (resolution.status !== 'RESOLVED') {
+        await ctx.reply(resolution.clarificationMessage ?? TelegramMessages.unresolvedToken());
+        return;
+      }
 
-        // Asynchronously resolve candidate via Nansen multi-strategy token resolution
-        const tTokenStart = Date.now();
-        const resolution = await this.tokenResolver.resolveDetailed(tokenCandidate);
-        const tTokenEnd = Date.now();
-        profiler.recordStage('2. Token resolution', tTokenStart, tTokenEnd, {
-          status: resolution.status,
-          candidate: tokenCandidate.identifier,
-        });
+      const target = resolution.target;
 
-        if (resolution.status === 'INVALID_ADDRESS') {
-          await ctx.reply(TelegramMessages.unresolvedToken());
-          return;
-        }
+      // 2. Standalone chain input (e.g. user simply typed "solana", "on base")
+      const words = trimmed.split(/\s+/);
+      const isQuestion = /\b(what|who|why|how|when|where|show|find|explain|is|are|tell|did)\b/i.test(trimmed);
+      const isStandaloneChain = target.type === 'chain' && !isQuestion && (words.length <= 2 || detectChainOnlyInput(trimmed) !== undefined);
 
-        if (resolution.status === 'NOT_FOUND') {
-          // Syntactically valid address or identifier, but not indexed in Nansen data
-          await ctx.reply(TelegramMessages.tokenNotIndexed());
-          return;
-        }
-
-        if (resolution.status === 'AMBIGUOUS_SYMBOL') {
-          await ctx.reply(
-            TelegramMessages.ambiguousSymbol(
-              tokenCandidate.identifier,
-              resolution.availableChains ?? []
-            )
-          );
-          return;
-        }
-
-        const resolvedToken = resolution.token;
-        if (!resolvedToken) {
-          await ctx.reply(TelegramMessages.unresolvedToken());
-          return;
-        }
-
-        // Token resolved! Establish active investigation context for this chat
+      if (isStandaloneChain && target.type === 'chain') {
         this.investigationManager.clearActiveInvestigation(chatId);
         this.investigationManager.createInvestigation({
           telegramChatId: chatId,
-          token: resolvedToken,
+          target,
+          initialQuestion: trimmed,
+        });
+        await ctx.reply(TelegramMessages.chainOnly(target.chainDisplayName));
+        return;
+      }
+
+      // 3. Check if input was intended strictly as a token selection (standalone)
+      const tokenCandidate = extractTokenCandidate(trimmed);
+      const isStandaloneToken = target.type === 'token' && isOnlyTokenInput(trimmed, tokenCandidate);
+
+      if (isStandaloneToken && target.type === 'token') {
+        this.investigationManager.clearActiveInvestigation(chatId);
+        this.investigationManager.createInvestigation({
+          telegramChatId: chatId,
+          target,
+          token: target.token,
         });
 
-        await ctx.reply(TelegramMessages.tokenSelected(resolvedToken.symbol), {
+        await ctx.reply(TelegramMessages.tokenSelected(target.token.symbol), {
           reply_markup: TelegramKeyboards.tokenShortcuts(),
         });
         return;
       }
 
-      // 3. User sent an investigation question or shortcut prompt
-      // Determine effective token: explicitly mentioned in question, or inherited from active context
-      let effectiveToken = activeInv?.token;
+      // 4. Investigation question turn
       let investigationId = activeInv?.id;
+      const effectiveToken = target.type === 'token' ? target.token : undefined;
 
-      if (tokenCandidate) {
-        const tTokenStart = Date.now();
-        const resolved = await this.tokenResolver.resolve(tokenCandidate);
-        const tTokenEnd = Date.now();
-        profiler.recordStage('2. Token resolution', tTokenStart, tTokenEnd, {
-          candidate: tokenCandidate.identifier,
-          resolved: resolved?.symbol,
+      const isNewTarget =
+        !activeInv ||
+        (target.type === 'token'
+          ? !activeInv.token ||
+            activeInv.token.symbol !== target.token.symbol ||
+            activeInv.token.chain !== target.token.chain
+          : target.type === 'chain'
+          ? !activeInv.target ||
+            activeInv.target.type !== 'chain' ||
+            activeInv.target.chain !== target.chain
+          : target.type === 'wallet'
+          ? !activeInv.target ||
+            activeInv.target.type !== 'wallet' ||
+            activeInv.target.address.toLowerCase() !== target.address.toLowerCase()
+          : true);
+
+      if (isNewTarget && resolution.source !== 'existing_context') {
+        this.investigationManager.clearActiveInvestigation(chatId);
+        const newInv = this.investigationManager.createInvestigation({
+          telegramChatId: chatId,
+          target,
+          token: effectiveToken,
+          initialQuestion: trimmed,
         });
-
-        if (
-          resolved &&
-          (!activeInv ||
-            resolved.symbol !== activeInv.token.symbol ||
-            resolved.address.toLowerCase() !== activeInv.token.address.toLowerCase())
-        ) {
-          // User switched or introduced a new token in their question
-          this.investigationManager.clearActiveInvestigation(chatId);
-          const newInv = this.investigationManager.createInvestigation({
-            telegramChatId: chatId,
-            token: resolved,
-            initialQuestion: trimmed,
-          });
-          effectiveToken = resolved;
-          investigationId = newInv.id;
-        }
-      } else {
-        const now = Date.now();
-        profiler.recordStage('2. Token resolution', now, now, { cached: true, token: effectiveToken?.symbol });
+        investigationId = newInv.id;
       }
 
-      if (!effectiveToken) {
-        // No active token and no token in query (Requirement 10)
-        await ctx.reply(TelegramMessages.missingToken());
-        return;
-      }
+      const displaySymbol =
+        target.type === 'token'
+          ? target.token.symbol
+          : target.type === 'chain'
+          ? target.chainDisplayName
+          : target.label || truncateAddress(target.address);
 
       // Initialize Telegram progress feedback tracker and send initial progress message immediately
       const progressTracker = new TelegramProgressTracker({
         chatId,
-        tokenSymbol: effectiveToken.symbol,
+        tokenSymbol: displaySymbol,
         ctx,
         botApi: this.bot.api,
       });
       await progressTracker.start();
 
-      // 4. Delegate execution directly to InvestigationOrchestrator
+      // 5. Delegate execution directly to InvestigationOrchestrator
       let turnResult;
       try {
         turnResult = await this.orchestrator.executeTurn({
           investigationId,
           chatId,
           question: trimmed,
+          target,
           token: effectiveToken,
           userId,
           onProgress: async (stage) => {

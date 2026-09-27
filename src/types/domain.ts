@@ -32,6 +32,45 @@ export const TokenContextSchema = z.object({
 
 export type TokenContext = z.infer<typeof TokenContextSchema>;
 
+export type InvestigationTargetType = 'token' | 'chain' | 'wallet';
+
+export const TokenTargetSchema = z.object({
+  type: z.literal('token'),
+  token: TokenContextSchema,
+  chain: z.string(),
+  rawIdentifier: z.string().optional(),
+  explicitChain: z.string().optional(),
+});
+
+export type TokenTarget = z.infer<typeof TokenTargetSchema>;
+
+export const ChainTargetSchema = z.object({
+  type: z.literal('chain'),
+  chain: z.string(),
+  chainDisplayName: z.string(),
+  rawIdentifier: z.string().optional(),
+});
+
+export type ChainTarget = z.infer<typeof ChainTargetSchema>;
+
+export const WalletTargetSchema = z.object({
+  type: z.literal('wallet'),
+  address: z.string(),
+  chain: z.string(),
+  label: z.string().optional(),
+  rawIdentifier: z.string().optional(),
+});
+
+export type WalletTarget = z.infer<typeof WalletTargetSchema>;
+
+export const InvestigationTargetSchema = z.discriminatedUnion('type', [
+  TokenTargetSchema,
+  ChainTargetSchema,
+  WalletTargetSchema,
+]);
+
+export type InvestigationTarget = z.infer<typeof InvestigationTargetSchema>;
+
 export const InvestigationMessageSchema = z.object({
   id: z.string(),
   investigationId: z.string(),
@@ -130,7 +169,8 @@ export type TimelineEvent = z.infer<typeof TimelineEventSchema>;
 export const InvestigationSchema = z.object({
   id: z.string(),
   telegramChatId: z.union([z.number(), z.string()]),
-  token: TokenContextSchema,
+  token: TokenContextSchema.optional(),
+  target: InvestigationTargetSchema.optional(),
   chain: z.string(),
   initialQuestion: z.string(),
   currentQuestion: z.string(),

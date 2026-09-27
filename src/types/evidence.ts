@@ -51,6 +51,7 @@ export const EvidenceItemSchema = z.object({
   summary: z.string(),
   provenance: EvidenceProvenanceSchema,
   normalizedData: z.record(z.string(), z.unknown()),
+  rawPayload: z.unknown().optional(),
   rawResponseHash: z.string().optional(),
   createdAt: z.string().datetime(),
 });

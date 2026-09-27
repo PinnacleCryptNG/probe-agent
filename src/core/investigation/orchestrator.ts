@@ -10,6 +10,10 @@ import { EvidenceSynthesisEngine } from '../synthesis/synthesizer.js';
 import { SynthesisRequest, SynthesisResult } from '../synthesis/types.js';
 import { InvestigationManager, investigationManager as defaultManager } from './manager.js';
 import { InvestigationTurnRequest, InvestigationTurnResult } from './types.js';
+import { ITargetResolver, defaultTargetResolver, InvestigationTarget } from '../target/index.js';
+import { getNativeAssetForChain } from '../target/native-assets.js';
+import { isFuturePricePrediction } from '../planner/prediction.js';
+import { truncateAddress } from '../synthesis/formatting.js';
 
 import { detectChallenge } from '../challenge/detector.js';
 import { ChallengeSynthesizer } from '../challenge/synthesizer.js';
@@ -22,11 +26,15 @@ export interface InvestigationOrchestratorDependencies {
   synthesizer: EvidenceSynthesisEngine;
   challengeSynthesizer?: ChallengeSynthesizer;
   investigationManager?: InvestigationManager;
+  manager?: InvestigationManager;
+  targetResolver?: ITargetResolver;
 }
 
 /**
  * InvestigationOrchestrator represents one complete PROBE investigation turn:
  * User Question
+ *   ↓
+ * TargetResolver (source of truth for current turn)
  *   ↓
  * InvestigationPlanner
  *   ↓
@@ -44,13 +52,15 @@ export class InvestigationOrchestrator {
   private readonly synthesizer: EvidenceSynthesisEngine;
   private readonly challengeSynthesizer: ChallengeSynthesizer;
   private readonly manager: InvestigationManager;
+  private readonly targetResolver: ITargetResolver;
 
   constructor(deps: InvestigationOrchestratorDependencies) {
     this.planner = deps.planner;
     this.executor = deps.executor;
     this.synthesizer = deps.synthesizer;
     this.challengeSynthesizer = deps.challengeSynthesizer ?? new ChallengeSynthesizer();
-    this.manager = deps.investigationManager ?? defaultManager;
+    this.manager = deps.investigationManager ?? deps.manager ?? defaultManager;
+    this.targetResolver = deps.targetResolver ?? defaultTargetResolver;
   }
 
   /**
@@ -69,61 +79,183 @@ export class InvestigationOrchestrator {
 
     // 1. Resolve or initialize investigation state
     let investigationId = request.investigationId;
-    let tokenContext: TokenContext | undefined = request.token;
+    let existingInv = investigationId
+      ? this.manager.getInvestigation(investigationId)
+      : request.chatId !== undefined
+      ? this.manager.getActiveInvestigationByChatId(request.chatId)
+      : undefined;
 
-    if (investigationId) {
-      const existing = this.manager.getInvestigation(investigationId);
-      if (!existing) {
-        logger.warn('Investigation not found', { investigationId });
-        return {
-          investigationId,
-          turnId,
-          status: 'failed',
-          question: trimmedQuestion,
-          evidence: [],
-          error: {
-            code: 'INVESTIGATION_NOT_FOUND',
-            message: `Investigation '${investigationId}' was not found in active state.`,
-          },
-        };
-      }
-      tokenContext = tokenContext ?? existing.token;
-    } else if (request.chatId !== undefined) {
-      const active = this.manager.getActiveInvestigationByChatId(request.chatId);
-      if (active) {
-        investigationId = active.id;
-        tokenContext = tokenContext ?? active.token;
-      }
+    if (investigationId && !existingInv) {
+      logger.warn('Investigation not found', { investigationId });
+      return {
+        investigationId,
+        turnId,
+        status: 'failed',
+        question: trimmedQuestion,
+        evidence: [],
+        error: {
+          code: 'INVESTIGATION_NOT_FOUND',
+          message: `Investigation '${investigationId}' was not found in active state.`,
+        },
+      };
     }
 
-    // If no existing investigation and no tokenContext, we cannot safely investigate
-    if (!investigationId && !tokenContext) {
-      logger.info('Turn needs clarification: missing token context');
+    if (existingInv && !investigationId) {
+      investigationId = existingInv.id;
+    }
+
+    // Determine existing target context
+    const existingTarget: InvestigationTarget | undefined =
+      request.target ??
+      existingInv?.target ??
+      (request.token
+        ? { type: 'token', token: request.token, chain: request.token.chain, rawIdentifier: request.token.symbol }
+        : existingInv?.token
+        ? { type: 'token', token: existingInv.token, chain: existingInv.token.chain, rawIdentifier: existingInv.token.symbol }
+        : undefined);
+
+    // Run deterministic target resolution before planner (Precedence Rules 1-4)
+    const resolution = await this.targetResolver.resolve({
+      question: trimmedQuestion,
+      existingTarget,
+      chatId: request.chatId,
+    });
+
+    if (resolution.status === 'AMBIGUOUS') {
+      logger.info('Turn needs clarification: ambiguous target symbol', { candidate: resolution.candidateIdentifier });
+      const clarMsg =
+        resolution.clarificationMessage ??
+        (resolution.availableChains && resolution.availableChains.length > 0
+          ? `The symbol '${resolution.candidateIdentifier}' exists on multiple chains (${resolution.availableChains.join(', ')}). Please specify the chain (e.g. '${resolution.candidateIdentifier} on ${resolution.availableChains[0]}').`
+          : `Which chain for ${resolution.candidateIdentifier}?`);
+
       return {
-        investigationId: '',
+        investigationId: existingInv?.id ?? '',
+        turnId,
+        status: 'needs_clarification',
+        question: trimmedQuestion,
+        evidence: [],
+        clarificationQuestions: [clarMsg],
+        unresolvedRequirements: ['token_context'],
+      };
+    }
+
+    if (resolution.status === 'NEEDS_TARGET') {
+      logger.info('Turn needs clarification: missing target');
+      return {
+        investigationId: existingInv?.id ?? '',
         turnId,
         status: 'needs_clarification',
         question: trimmedQuestion,
         evidence: [],
         clarificationQuestions: [
-          'Which token would you like to investigate? Please specify a token contract address or symbol.',
+          resolution.clarificationMessage ??
+            'Which token would you like to investigate? Please specify a token contract address or symbol.',
         ],
         unresolvedRequirements: ['token_context'],
       };
     }
 
-    // Create new investigation if not yet created
-    if (!investigationId && tokenContext) {
+    if (resolution.status === 'INVALID_ADDRESS') {
+      logger.info('Turn needs clarification: invalid target address');
+      return {
+        investigationId: existingInv?.id ?? '',
+        turnId,
+        status: 'needs_clarification',
+        question: trimmedQuestion,
+        evidence: [],
+        clarificationQuestions: [
+          resolution.clarificationMessage ?? 'The provided address is invalid. Please check the contract address.',
+        ],
+        unresolvedRequirements: ['invalid_address'],
+      };
+    }
+
+    if (resolution.status !== 'RESOLVED') {
+      return {
+        investigationId: existingInv?.id ?? '',
+        turnId,
+        status: 'needs_clarification',
+        question: trimmedQuestion,
+        evidence: [],
+        clarificationQuestions: ['Which token, chain, or wallet would you like to investigate?'],
+        unresolvedRequirements: ['token_context'],
+      };
+    }
+
+    const resolvedTarget = resolution.target;
+
+    // Check if user explicitly switched to a new target
+    const isNewTarget =
+      !existingInv ||
+      (resolvedTarget.type === 'token'
+        ? !existingInv.token ||
+          existingInv.token.symbol !== resolvedTarget.token.symbol ||
+          existingInv.token.chain !== resolvedTarget.token.chain
+        : resolvedTarget.type === 'chain'
+        ? !existingInv.target ||
+          existingInv.target.type !== 'chain' ||
+          existingInv.target.chain !== resolvedTarget.chain
+        : !existingInv.target ||
+          existingInv.target.type !== 'wallet' ||
+          existingInv.target.address.toLowerCase() !== resolvedTarget.address.toLowerCase());
+
+    if (isNewTarget && resolution.source !== 'existing_context') {
+      if (request.chatId !== undefined) {
+        this.manager.clearActiveInvestigation(request.chatId);
+      }
       const newInv = this.manager.createInvestigation({
         telegramChatId: request.chatId ?? 'default_chat',
-        token: tokenContext,
+        target: resolvedTarget,
+        token: resolvedTarget.type === 'token' ? resolvedTarget.token : undefined,
         initialQuestion: trimmedQuestion,
       });
       investigationId = newInv.id;
+      existingInv = newInv;
+    } else if (!investigationId && !existingInv) {
+      const newInv = this.manager.createInvestigation({
+        telegramChatId: request.chatId ?? 'default_chat',
+        target: resolvedTarget,
+        token: resolvedTarget.type === 'token' ? resolvedTarget.token : undefined,
+        initialQuestion: trimmedQuestion,
+      });
+      investigationId = newInv.id;
+      existingInv = newInv;
     }
 
     const currentInv = this.manager.getRequiredInvestigation(investigationId!);
-    const effectiveToken = tokenContext ?? currentInv.token;
+    if (!currentInv.target && resolvedTarget) {
+      this.manager.updateInvestigationTarget(currentInv.id, resolvedTarget);
+    }
+
+    let effectiveToken: TokenContext | undefined;
+    let tokenCtxForSynthesis: TokenContext;
+
+    if (resolvedTarget.type === 'token') {
+      effectiveToken = resolvedTarget.token;
+      tokenCtxForSynthesis = resolvedTarget.token;
+    } else if (resolvedTarget.type === 'chain') {
+      effectiveToken = undefined;
+      const native = getNativeAssetForChain(resolvedTarget.chain);
+      tokenCtxForSynthesis = {
+        address: native?.address ?? '0x0000000000000000000000000000000000000000',
+        symbol: native?.ticker ?? resolvedTarget.chainDisplayName.toUpperCase(),
+        name: resolvedTarget.chainDisplayName,
+        chain: resolvedTarget.chain as any,
+        resolvedAt: new Date().toISOString(),
+        decimals: 18,
+      };
+    } else {
+      effectiveToken = currentInv.token;
+      tokenCtxForSynthesis = effectiveToken ?? {
+        address: resolvedTarget.address,
+        symbol: resolvedTarget.label || truncateAddress(resolvedTarget.address),
+        name: resolvedTarget.label || truncateAddress(resolvedTarget.address),
+        chain: resolvedTarget.chain as any,
+        resolvedAt: new Date().toISOString(),
+        decimals: 18,
+      };
+    }
 
     // Capture prior conversation history before recording the new user question
     const priorHistory = [...currentInv.messages];
@@ -192,7 +324,7 @@ export class InvestigationOrchestrator {
       const challengeResult = this.challengeSynthesizer.synthesizeChallenge({
         investigationId: currentInv.id,
         question: trimmedQuestion,
-        tokenContext: effectiveToken,
+        tokenContext: effectiveToken ?? tokenCtxForSynthesis,
         evidence: currentInv.evidence,
         originalFinding,
         findings: currentInv.findings,
@@ -201,7 +333,7 @@ export class InvestigationOrchestrator {
         specificHypothesis: challengeDetection.specificHypothesis,
       });
 
-      const formatted = formatChallengeResult(challengeResult, effectiveToken.symbol);
+      const formatted = formatChallengeResult(challengeResult, effectiveToken?.symbol ?? tokenCtxForSynthesis.symbol);
 
       this.manager.addMessage(currentInv.id, 'assistant', formatted, {
         turnId,
@@ -232,6 +364,7 @@ export class InvestigationOrchestrator {
         turnId,
         status: challengeResult.verdict === 'insufficient_evidence' ? 'insufficient_evidence' : 'completed',
         question: trimmedQuestion,
+        target: resolvedTarget,
         token: effectiveToken,
         evidence: currentInv.evidence,
         challenge: challengeResult,
@@ -241,11 +374,13 @@ export class InvestigationOrchestrator {
     // 2. Pass question and context to InvestigationPlanner
     const plannerContext: PlannerContext = {
       token: effectiveToken,
+      target: resolvedTarget,
       conversationHistory: priorHistory,
       activeFindings: currentInv.findings,
       remainingCredits: request.remainingCredits,
       maxCallsAllowed: request.maxCallsAllowed,
-      targetWalletAddress: request.targetWalletAddress,
+      targetWalletAddress:
+        resolvedTarget.type === 'wallet' ? resolvedTarget.address : request.targetWalletAddress,
     };
 
     let plan: InvestigationPlan;
@@ -269,6 +404,7 @@ export class InvestigationOrchestrator {
         turnId,
         status: 'failed',
         question: trimmedQuestion,
+        target: resolvedTarget,
         token: effectiveToken,
         evidence: [],
         error: {
@@ -293,7 +429,7 @@ export class InvestigationOrchestrator {
         unresolvedCount: plan.unresolvedRequirements.length,
       });
 
-      const clarificationQuestions = this.formulateClarificationQuestions(plan, effectiveToken);
+      const clarificationQuestions = this.formulateClarificationQuestions(plan, effectiveToken ?? tokenCtxForSynthesis);
 
       // Record assistant clarification response
       this.manager.addMessage(currentInv.id, 'assistant', clarificationQuestions.join('\n'), {
@@ -320,6 +456,7 @@ export class InvestigationOrchestrator {
         turnId,
         status: 'needs_clarification',
         question: trimmedQuestion,
+        target: resolvedTarget,
         token: effectiveToken,
         plan,
         evidence: [],
@@ -341,8 +478,9 @@ export class InvestigationOrchestrator {
     const execContext: ExecutionContext = {
       investigationId: currentInv.id,
       turnKey: `${currentInv.id}:${turnId}`,
-      tokenAddress: effectiveToken.address,
-      chain: effectiveToken.chain,
+      tokenAddress: effectiveToken?.address,
+      chain: effectiveToken?.chain ?? resolvedTarget.chain ?? 'ethereum',
+      walletAddress: resolvedTarget.type === 'wallet' ? resolvedTarget.address : request.targetWalletAddress,
       userId: request.userId,
     };
 
@@ -362,6 +500,7 @@ export class InvestigationOrchestrator {
         turnId,
         status: 'failed',
         question: trimmedQuestion,
+        target: resolvedTarget,
         token: effectiveToken,
         plan,
         evidence: [],
@@ -413,7 +552,8 @@ export class InvestigationOrchestrator {
       const emptySynthesis = await this.synthesizer.synthesize({
         question: trimmedQuestion,
         investigationId: currentInv.id,
-        tokenContext: effectiveToken,
+        tokenContext: tokenCtxForSynthesis,
+        target: resolvedTarget,
         plan,
         evidence: [],
         conversationHistory: currentInv.messages,
@@ -443,6 +583,7 @@ export class InvestigationOrchestrator {
         turnId,
         status: finalStatus,
         question: trimmedQuestion,
+        target: resolvedTarget,
         token: effectiveToken,
         plan,
         evidence: [],
@@ -468,7 +609,8 @@ export class InvestigationOrchestrator {
     const synthesisRequest: SynthesisRequest = {
       question: trimmedQuestion,
       investigationId: currentInv.id,
-      tokenContext: effectiveToken,
+      tokenContext: tokenCtxForSynthesis,
+      target: resolvedTarget,
       plan,
       evidence: retrievedEvidence,
       conversationHistory: currentInv.messages,
@@ -491,6 +633,8 @@ export class InvestigationOrchestrator {
         turnId,
         status: 'failed',
         question: trimmedQuestion,
+        target: resolvedTarget,
+        token: effectiveToken,
         plan,
         evidence: retrievedEvidence,
         error: {
@@ -511,6 +655,8 @@ export class InvestigationOrchestrator {
         turnId,
         status: 'failed',
         question: trimmedQuestion,
+        target: resolvedTarget,
+        token: effectiveToken,
         plan,
         evidence: retrievedEvidence,
         synthesis,
@@ -604,6 +750,7 @@ export class InvestigationOrchestrator {
       turnId,
       status,
       question: trimmedQuestion,
+      target: resolvedTarget,
       token: effectiveToken,
       plan,
       evidence: retrievedEvidence,
@@ -626,13 +773,7 @@ export class InvestigationOrchestrator {
     const qLower = (plan.question || '').toLowerCase();
 
     // 1. Future price prediction requests (Requirement 6)
-    const isPricePrediction =
-      qLower.includes('will it reach') ||
-      qLower.includes('will it hit') ||
-      qLower.includes('price target') ||
-      qLower.includes('price prediction') ||
-      qLower.includes('predict') ||
-      plan.unresolvedRequirements.some((r) => r.toLowerCase().includes('price'));
+    const isPricePrediction = isFuturePricePrediction(plan.question || '');
 
     if (isPricePrediction) {
       questions.push(

@@ -1,4 +1,5 @@
 import { generateId } from '../../utils/ids.js';
+import { getNativeAssetForChain } from '../target/native-assets.js';
 import {
   PlanEvidenceRequirement,
   PlannerContext,
@@ -24,8 +25,15 @@ export class RequirementFormulator {
     context: PlannerContext
   ): PlanEvidenceRequirement[] {
     const q = question.toLowerCase();
-    const tokenAddress = context.token.address;
-    const chain = context.token.chain;
+    const target = context.target ?? (context.token ? ({ type: 'token', token: context.token, chain: context.token.chain } as const) : undefined);
+    const chain = target?.chain ?? context.token?.chain ?? 'ethereum';
+    let tokenAddress = target?.type === 'token' ? target.token.address : (context.token?.address || '');
+    if (!tokenAddress && target?.type === 'chain') {
+      const native = getNativeAssetForChain(chain);
+      if (native) {
+        tokenAddress = native.address;
+      }
+    }
     const defaultDate = getDefaultDateRange(7);
 
     switch (intent) {
@@ -206,7 +214,10 @@ export class RequirementFormulator {
 
       case 'wallet_activity': {
         // e.g. "Which wallets have been most active?", "What did this wallet do?"
-        const targetWallet = context.targetWalletAddress || (q.match(/0x[a-fA-F0-9]{40}/)?.[0] ?? '');
+        const targetWallet =
+          context.targetWalletAddress ||
+          (target?.type === 'wallet' ? target.address : undefined) ||
+          (q.match(/0x[a-fA-F0-9]{40}/)?.[0] ?? '');
         return [
           {
             id: generateId('req'),
@@ -237,7 +248,10 @@ export class RequirementFormulator {
 
       case 'wallet_relationships': {
         // e.g. "Are these wallets connected?", "Who funded this wallet?"
-        const targetWallet = context.targetWalletAddress || (q.match(/0x[a-fA-F0-9]{40}/)?.[0] ?? '');
+        const targetWallet =
+          context.targetWalletAddress ||
+          (target?.type === 'wallet' ? target.address : undefined) ||
+          (q.match(/0x[a-fA-F0-9]{40}/)?.[0] ?? '');
         return [
           {
             id: generateId('req'),
@@ -363,8 +377,15 @@ export class RequirementFormulator {
     challengeText: string,
     context: PlannerContext
   ): PlanEvidenceRequirement[] {
-    const tokenAddress = context.token.address;
-    const chain = context.token.chain;
+    const target = context.target ?? (context.token ? ({ type: 'token', token: context.token, chain: context.token.chain } as const) : undefined);
+    const chain = target?.chain ?? context.token?.chain ?? 'ethereum';
+    let tokenAddress = target?.type === 'token' ? target.token.address : (context.token?.address || '');
+    if (!tokenAddress && target?.type === 'chain') {
+      const native = getNativeAssetForChain(chain);
+      if (native) {
+        tokenAddress = native.address;
+      }
+    }
 
     return [
       {

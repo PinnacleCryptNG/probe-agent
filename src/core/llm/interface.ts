@@ -1,5 +1,6 @@
 import { generateId } from '../../utils/ids.js';
 import { formatFlowUsd, truncateAddress, deriveNextSuggestions } from '../synthesis/formatting.js';
+import { formatTransferItem } from '../synthesis/synthesizer.js';
 import {
   LLMChallengeRequest,
   LLMChallengeResponse,
@@ -109,7 +110,12 @@ export class MockLLMProvider implements ILLMProvider {
     const flowEv = request.evidence.find((e) => e.provenance.capability === 'flow_intelligence');
     const tradeEv = request.evidence.find((e) => e.provenance.capability === 'who_bought_sold');
     const infoEv = request.evidence.find((e) => e.provenance.capability === 'token_information');
-    const txEv = request.evidence.find((e) => e.provenance.capability === 'token_transfers');
+    const txEv = request.evidence.find(
+      (e) =>
+        e.provenance.capability === 'token_transfers' ||
+        Array.isArray((e.normalizedData as any)?.transfers) ||
+        Array.isArray((e.rawPayload as any)?.transfers)
+    );
     const dexEv = request.evidence.find((e) => e.provenance.capability === 'dex_trades');
 
     if (flowEv) evidenceCategories.push('Cohort net flows');
@@ -262,26 +268,61 @@ export class MockLLMProvider implements ILLMProvider {
         });
       }
     } else if (isTxQuestion) {
-      if (txEv) {
+      const rawTransfers = Array.isArray((txEv?.normalizedData as any)?.transfers)
+        ? [...(txEv!.normalizedData as any).transfers]
+        : Array.isArray((txEv?.rawPayload as any)?.transfers)
+        ? [...(txEv!.rawPayload as any).transfers]
+        : [];
+
+      rawTransfers.sort((a, b) => {
+        const valA = Number(a.amount_usd ?? a.amountUsd ?? a.transfer_value_usd ?? a.usd_value ?? 0);
+        const valB = Number(b.amount_usd ?? b.amountUsd ?? b.transfer_value_usd ?? b.usd_value ?? 0);
+        if (valB !== valA) return valB - valA;
+        const amtA = Number(a.transfer_amount ?? a.amount ?? 0);
+        const amtB = Number(b.transfer_amount ?? b.amount ?? 0);
+        return amtB - amtA;
+      });
+
+      if (rawTransfers.length > 0) {
+        rawTransfers.slice(0, 3).forEach((t, idx) => {
+          const rank = idx === 0 ? 'Largest transfer' : idx === 1 ? '2nd largest transfer' : '3rd largest transfer';
+          observations.push({
+            claim: `${rank}: ${formatTransferItem(t, symbol)}`,
+            evidenceId: txEv!.evidenceId,
+          });
+        });
+      } else if (txEv) {
         observations.push({
-          claim: 'Large transfer activity detected across counterparty network',
+          claim: `No large transfer transactions recorded above threshold for ${symbol} in the observed period`,
           evidenceId: txEv.evidenceId,
         });
       }
+
       if (dexEv) {
-        observations.push({
-          claim: 'DEX swap executions monitored across decentralized exchange pools',
-          evidenceId: dexEv.evidenceId,
-        });
+        const rawTrades = Array.isArray((dexEv.normalizedData as any)?.trades)
+          ? [...(dexEv.normalizedData as any).trades]
+          : [];
+        rawTrades.sort((a, b) => Number(b.usd_value ?? b.estimated_value_usd ?? 0) - Number(a.usd_value ?? a.estimated_value_usd ?? 0));
+        if (rawTrades.length > 0 && observations.length < 4) {
+          const topTrade = rawTrades[0];
+          const val = Number(topTrade.usd_value ?? topTrade.estimated_value_usd ?? 0);
+          const dex = topTrade.dex_name || 'DEX';
+          const trader = topTrade.trader_label || topTrade.trader_address_label || truncateAddress(topTrade.trader_address || '');
+          const valStr = val > 0 ? ` (${formatFlowUsd(val, false)})` : '';
+          observations.push({
+            claim: `Largest DEX trade: ${topTrade.action || topTrade.trade_type || 'Swap'}${valStr} on ${dex} (trader: ${trader})`,
+            evidenceId: dexEv.evidenceId,
+          });
+        }
       }
-      if (topBuyer && tradeEv) {
+      if (topBuyer && tradeEv && observations.length < 4) {
         const addr = topBuyer.address_label || topBuyer.label || truncateAddress(topBuyer.address || '');
         observations.push({
           claim: `Top trade accumulator: ${addr}`,
           evidenceId: tradeEv.evidenceId,
         });
       }
-      if (freshNet !== undefined && flowEv) {
+      if (freshNet !== undefined && flowEv && observations.length < 5) {
         observations.push({
           claim: `Fresh wallets: ${formatFlowUsd(Number(freshNet))} net flow`,
           evidenceId: flowEv.evidenceId,
@@ -378,7 +419,24 @@ export class MockLLMProvider implements ILLMProvider {
         headline = `No prominent seller concentration identified across monitored cohorts in ${symbol}.`;
       }
     } else if (isTxQuestion) {
-      headline = `High-volume transfer and swap activity recorded across ${symbol} counterparties.`;
+      const rawTransfers = Array.isArray((txEv?.normalizedData as any)?.transfers)
+        ? [...(txEv!.normalizedData as any).transfers]
+        : Array.isArray((txEv?.rawPayload as any)?.transfers)
+        ? [...(txEv!.rawPayload as any).transfers]
+        : [];
+      rawTransfers.sort((a, b) => {
+        const valA = Number(a.amount_usd ?? a.amountUsd ?? a.transfer_value_usd ?? a.usd_value ?? 0);
+        const valB = Number(b.amount_usd ?? b.amountUsd ?? b.transfer_value_usd ?? b.usd_value ?? 0);
+        if (valB !== valA) return valB - valA;
+        const amtA = Number(a.transfer_amount ?? a.amount ?? 0);
+        const amtB = Number(b.transfer_amount ?? b.amount ?? 0);
+        return amtB - amtA;
+      });
+      if (rawTransfers.length > 0) {
+        headline = `Largest recorded transfer for ${symbol} was ${formatTransferItem(rawTransfers[0], symbol)}.`;
+      } else {
+        headline = `High-volume transfer and swap activity recorded across ${symbol} counterparties.`;
+      }
     } else if (isChangeQuestion) {
       if (freshNet !== undefined && exNet !== undefined) {
         headline = `Recent activity shows ${formatFlowUsd(Number(freshNet))} in fresh-wallet net inflows and ${formatFlowUsd(Number(exNet))} in exchange net flows.`;

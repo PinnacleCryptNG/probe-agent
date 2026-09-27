@@ -5,6 +5,7 @@ import { generateId } from '../../utils/ids.js';
 import { logger } from '../../utils/logger.js';
 import { CapabilitySelector } from './capability-selector.js';
 import { RequirementFormulator } from './requirements.js';
+import { isFuturePricePrediction } from './prediction.js';
 import {
   InvestigationPlan,
   PlannerContext,
@@ -39,11 +40,26 @@ export class InvestigationPlanner {
     const planId = generateId('plan');
     const createdAt = new Date().toISOString();
 
+    const target =
+      context.target ??
+      (context.token
+        ? {
+            type: 'token' as const,
+            token: context.token,
+            chain: context.token.chain,
+            rawIdentifier: context.token.symbol,
+          }
+        : undefined);
+
+    const tokenContext = target?.type === 'token' ? target.token : context.token;
+    const chain = target?.chain ?? tokenContext?.chain ?? 'ethereum';
+
     logger.info('Planning investigation for question', {
       planId,
       question: trimmedQuestion,
-      token: context.token.symbol,
-      chain: context.token.chain,
+      targetType: target?.type,
+      targetIdentifier: target?.type === 'token' ? target.token.symbol : target?.type === 'wallet' ? target.address : target?.chainDisplayName,
+      chain,
     });
 
     // 1. Intent understanding via semantic classification & follow-up context
@@ -59,7 +75,8 @@ export class InvestigationPlanner {
       planId,
       question: trimmedQuestion,
       intent,
-      tokenContext: context.token,
+      target,
+      tokenContext,
       evidenceRequirements: selection.resolvedRequirements,
       selectedCapabilities: selection.selectedCapabilities,
       plannedCapabilities: selection.plannedCapabilities,
@@ -105,7 +122,8 @@ export class InvestigationPlanner {
       planId,
       question: challengeText,
       intent: 'historical_comparison',
-      tokenContext: context.token,
+      target: context.target,
+      tokenContext: context.target?.type === 'token' ? context.target.token : context.token,
       evidenceRequirements: selection.resolvedRequirements,
       selectedCapabilities: selection.selectedCapabilities,
       plannedCapabilities: selection.plannedCapabilities,
@@ -173,32 +191,28 @@ export class InvestigationPlanner {
       return 'wallet_activity';
     }
 
-    // 2. Speculative, price prediction, or off-chain requests (unsupported by on-chain evidence)
-    if (
-      q.includes('will it reach') ||
-      q.includes('will it hit') ||
-      q.includes('price target') ||
-      q.includes('price prediction') ||
-      q.includes('predict') ||
-      q.includes('marketing strategy') ||
-      q.includes('roadmap') ||
-      q.includes('dev team secret')
-    ) {
+    // 2. Genuine future price prediction checks (e.g. "Will ETH pump tomorrow?", "Will ETH hit $5,000?")
+    if (isFuturePricePrediction(question)) {
       return 'unknown';
     }
 
-    // 3. Holder analysis (supply distribution, top holders)
+    // 3. Large transactions & transfers
     if (
-      q.includes('holder') ||
-      q.includes('holders') ||
-      q.includes('who owns') ||
-      q.includes('concentration') ||
-      q.includes('supply distribution')
+      q.includes('biggest transaction') ||
+      q.includes('biggest transactions') ||
+      q.includes('largest transaction') ||
+      q.includes('largest transactions') ||
+      q.includes('large transfer') ||
+      q.includes('large transfers') ||
+      q.includes('biggest eth transaction') ||
+      q.includes('biggest eth transactions') ||
+      q.includes('transfers') ||
+      q.includes('transfer log')
     ) {
-      return 'holder_analysis';
+      return 'large_transactions';
     }
 
-    // 4. Accumulation
+    // 4. Accumulation / buyers
     if (
       q.includes('accumulate') ||
       q.includes('accumulating') ||
@@ -216,7 +230,7 @@ export class InvestigationPlanner {
       return 'accumulation';
     }
 
-    // 5. Distribution / selling
+    // 5. Distribution / sellers
     if (
       q.includes('dump') ||
       q.includes('dumping') ||
@@ -233,17 +247,33 @@ export class InvestigationPlanner {
       return 'distribution';
     }
 
-    // 6. Activity change / sudden movement / price pump
+    // 6. Cohort flows & whales (e.g. "Who are the biggest whales on Ethereum?", "What is smart money doing on Solana?")
     if (
-      q.includes('pump') ||
-      q.includes('pumping') ||
-      q.includes('crash') ||
-      q.includes('spike') ||
-      q.includes('suddenly') ||
-      q.includes('surge') ||
-      q.includes('why is activity changing') ||
-      q.includes('activity change') ||
-      q.includes('activity changing') ||
+      q.includes('biggest whales') ||
+      q.includes('biggest whale') ||
+      q.includes('whales') ||
+      q.includes('whale') ||
+      q.includes('smart money') ||
+      q.includes('cohort') ||
+      q.includes('flow') ||
+      q.includes('flows')
+    ) {
+      return 'flow_analysis';
+    }
+
+    // 7. Holder analysis (supply distribution, top holders)
+    if (
+      q.includes('holder') ||
+      q.includes('holders') ||
+      q.includes('who owns') ||
+      q.includes('concentration') ||
+      q.includes('supply distribution')
+    ) {
+      return 'holder_analysis';
+    }
+
+    // 8. Activity change / sudden movement / price pump
+    if (
       q.includes('what changed') ||
       q.includes('changed recently') ||
       q.includes('recent change') ||
@@ -253,26 +283,38 @@ export class InvestigationPlanner {
       q.includes("what's happening") ||
       q.includes('whats happening') ||
       q.includes('what is happening') ||
-      q.includes('what caused')
+      q.includes("what's moving") ||
+      q.includes('whats moving') ||
+      q.includes('what is moving') ||
+      q.includes('why is activity changing') ||
+      q.includes('activity change') ||
+      q.includes('activity changing') ||
+      q.includes('why is') ||
+      q.includes('why are') ||
+      q.includes('why did') ||
+      q.includes('what caused') ||
+      q.includes('what about') ||
+      q.includes('how about') ||
+      q.includes('pump') ||
+      q.includes('pumping') ||
+      q.includes('crash') ||
+      q.includes('spike') ||
+      q.includes('suddenly') ||
+      q.includes('surge')
     ) {
       return 'activity_change';
     }
 
-    // 7. Large transactions & transfers
+    // 9. Off-chain roadmap or developer secret requests
     if (
-      q.includes('biggest transaction') ||
-      q.includes('biggest transactions') ||
-      q.includes('largest transaction') ||
-      q.includes('largest transactions') ||
-      q.includes('large transfer') ||
-      q.includes('large transfers') ||
-      q.includes('transfers') ||
-      q.includes('transfer log')
+      q.includes('marketing strategy') ||
+      q.includes('roadmap') ||
+      q.includes('dev team secret')
     ) {
-      return 'large_transactions';
+      return 'unknown';
     }
 
-    // 8. Historical comparison
+    // 10. Historical comparison
     if (
       q.includes('unusual') ||
       q.includes('compared to') ||
@@ -285,7 +327,7 @@ export class InvestigationPlanner {
       return 'historical_comparison';
     }
 
-    // 9. Wallet relationships (counterparties, related wallets, first funder)
+    // 11. Wallet relationships (counterparties, related wallets, first funder)
     if (
       q.includes('related wallet') ||
       q.includes('connected') ||
@@ -296,7 +338,7 @@ export class InvestigationPlanner {
       return 'wallet_relationships';
     }
 
-    // 10. Specific wallet activity
+    // 12. Specific wallet activity
     if (
       q.includes('wallet') ||
       q.includes('which wallets') ||
@@ -306,7 +348,7 @@ export class InvestigationPlanner {
       return 'wallet_activity';
     }
 
-    // 11. DEX trading
+    // 13. DEX trading
     if (
       q.includes('dex') ||
       q.includes('swap') ||
@@ -317,12 +359,7 @@ export class InvestigationPlanner {
       return 'dex_activity';
     }
 
-    // 12. Cohort flows
-    if (q.includes('flow') || q.includes('smart money') || q.includes('whales')) {
-      return 'flow_analysis';
-    }
-
-    // 13. General token activity
+    // 14. General token activity
     if (q.includes('activity') || q.includes('price') || q.includes('status') || q.includes('info')) {
       return 'token_activity';
     }

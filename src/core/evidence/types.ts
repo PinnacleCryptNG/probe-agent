@@ -6,6 +6,7 @@ export interface ExecutionContext {
   turnKey?: string;
   tokenAddress?: string;
   chain?: string;
+  walletAddress?: string;
   userId?: string;
 }
 

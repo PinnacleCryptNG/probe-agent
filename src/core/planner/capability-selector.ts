@@ -1,5 +1,6 @@
 import { CapabilityRegistry } from '../capabilities/registry.js';
 import { CapabilityName } from '../../types/capabilities.js';
+import { getNativeAssetForChain } from '../target/native-assets.js';
 import {
   PlanCapability,
   PlanEvidenceRequirement,
@@ -28,8 +29,8 @@ export class CapabilitySelector {
     requirements: PlanEvidenceRequirement[],
     context: PlannerContext
   ): SelectorResult {
-    const chain = (context.token.chain || 'ethereum').trim().toLowerCase();
-    const tokenAddress = context.token.address;
+    const chain = (context.target?.chain || context.token?.chain || 'ethereum').trim().toLowerCase();
+    const tokenAddress = context.token?.address ?? (context.target?.type === 'token' ? context.target.token.address : undefined);
     const warnings: PlanningWarning[] = [];
     const unresolvedRequirements: string[] = [];
     const resolvedRequirements: PlanEvidenceRequirement[] = [];
@@ -79,6 +80,17 @@ export class CapabilitySelector {
         if (capDef.requiresToken && !params.token_address) {
           if (tokenAddress) {
             params.token_address = tokenAddress;
+          } else if (context.target?.type === 'chain') {
+            const native = getNativeAssetForChain(chain);
+            if (native) {
+              params.token_address = native.address;
+            } else {
+              warnings.push({
+                code: 'CHAIN_UNSUPPORTED',
+                message: `Capability '${capName}' requires a native asset for chain '${chain}', but none was found.`,
+              });
+              continue;
+            }
           } else {
             warnings.push({
               code: 'MISSING_TOKEN_INPUT',
@@ -89,7 +101,10 @@ export class CapabilitySelector {
         }
 
         if (capDef.requiresAddress && !params.address) {
-          const targetAddr = context.targetWalletAddress || (req.parameters.address as string | undefined);
+          const targetAddr =
+            context.targetWalletAddress ||
+            (context.target?.type === 'wallet' ? context.target.address : undefined) ||
+            (req.parameters.address as string | undefined);
           if (targetAddr) {
             params.address = targetAddr;
           } else {

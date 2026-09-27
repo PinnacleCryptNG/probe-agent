@@ -13,6 +13,7 @@ import { MemoryCache } from '../cache/memory-cache.js';
 import { IResolutionStrategy } from './strategies/types.js';
 import { SearchGeneralStrategy } from './strategies/search-general-strategy.js';
 import { TokenInformationStrategy } from './strategies/token-information-strategy.js';
+import { getNativeAssetForTicker } from '../target/native-assets.js';
 
 export interface TokenResolverDependencies {
   nansenClient?: INansenClient;
@@ -229,21 +230,6 @@ export class TokenResolver implements ITokenResolver {
     }
 
     const upper = candidate.identifier.toUpperCase();
-    if (upper === 'ETH') {
-      return {
-        status: 'RESOLVED',
-        token: {
-          address: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
-          symbol: 'ETH',
-          name: 'Ethereum',
-          chain: 'ethereum',
-          resolvedAt: new Date().toISOString(),
-        },
-        candidate,
-        detectedChain: 'ethereum',
-        creditCost: 0,
-      };
-    }
 
     if (upper === 'WETH') {
       return {
@@ -261,18 +247,36 @@ export class TokenResolver implements ITokenResolver {
       };
     }
 
-    if (upper === 'SOL') {
+    if (upper === 'WBTC') {
       return {
         status: 'RESOLVED',
         token: {
-          address: 'So11111111111111111111111111111111111111112',
-          symbol: 'SOL',
-          name: 'Solana',
-          chain: 'solana',
+          address: '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599',
+          symbol: 'WBTC',
+          name: 'Wrapped BTC',
+          chain: candidate.detectedChain || 'ethereum',
           resolvedAt: new Date().toISOString(),
         },
         candidate,
-        detectedChain: 'solana',
+        detectedChain: candidate.detectedChain || 'ethereum',
+        creditCost: 0,
+      };
+    }
+
+    const native = getNativeAssetForTicker(upper);
+    if (native) {
+      const resolvedChain = candidate.detectedChain || native.chain;
+      return {
+        status: 'RESOLVED',
+        token: {
+          address: native.address,
+          symbol: native.ticker,
+          name: native.name,
+          chain: resolvedChain,
+          resolvedAt: new Date().toISOString(),
+        },
+        candidate,
+        detectedChain: resolvedChain,
         creditCost: 0,
       };
     }

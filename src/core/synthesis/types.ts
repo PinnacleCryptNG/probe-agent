@@ -1,6 +1,7 @@
 import { Finding, InvestigationMessage, TokenContext } from '../../types/domain.js';
 import { EvidenceItem } from '../../types/evidence.js';
 import { InvestigationPlan } from '../planner/types.js';
+import { InvestigationTarget } from '../target/types.js';
 
 export type SynthesisConfidence = 'high' | 'medium' | 'low';
 
@@ -50,6 +51,7 @@ export interface SynthesisRequest {
   question: string;
   investigationId: string;
   tokenContext: TokenContext;
+  target?: InvestigationTarget;
   plan?: InvestigationPlan;
   evidence: EvidenceItem[];
   conversationHistory?: InvestigationMessage[];

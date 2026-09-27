@@ -4,6 +4,7 @@ import {
   Investigation,
   InvestigationMessage,
   InvestigationState,
+  InvestigationTarget,
   TimelineEvent,
   TokenContext,
 } from '../../types/domain.js';
@@ -15,7 +16,8 @@ import { validateStateTransition } from './state.js';
 
 export interface CreateInvestigationParams {
   telegramChatId: number | string;
-  token: TokenContext;
+  token?: TokenContext;
+  target?: InvestigationTarget;
   initialQuestion?: string;
 }
 
@@ -24,17 +26,56 @@ export class InvestigationManager {
   private activeByChatId = new Map<string, string>();
 
   /**
-   * Initializes a new investigation instance for a resolved token.
+   * Initializes a new investigation instance for a resolved target (token, chain, or wallet).
    */
   public createInvestigation(params: CreateInvestigationParams): Investigation {
     const id = generateId('inv');
     const now = new Date().toISOString();
 
+    const target: InvestigationTarget =
+      params.target ??
+      (params.token
+        ? {
+            type: 'token',
+            token: params.token,
+            chain: params.token.chain,
+            rawIdentifier: params.token.symbol,
+          }
+        : {
+            type: 'token',
+            token: {
+              address: '0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee',
+              symbol: 'ETH',
+              name: 'Ethereum',
+              chain: 'ethereum',
+              resolvedAt: now,
+            },
+            chain: 'ethereum',
+            rawIdentifier: 'ETH',
+          });
+
+    const token = target.type === 'token' ? target.token : params.token;
+    const chain = target.chain;
+
+    let summary = `Investigation started for ${chain}`;
+    const details: Record<string, unknown> = { chain };
+
+    if (target.type === 'token') {
+      summary = `Investigation started for ${target.token.symbol} (${target.token.name}) on ${target.chain}`;
+      details.tokenAddress = target.token.address;
+    } else if (target.type === 'chain') {
+      summary = `Investigation started for chain scope ${target.chainDisplayName} (${target.chain})`;
+    } else if (target.type === 'wallet') {
+      summary = `Investigation started for wallet ${target.address} on ${target.chain}`;
+      details.walletAddress = target.address;
+    }
+
     const investigation: Investigation = {
       id,
       telegramChatId: params.telegramChatId,
-      token: params.token,
-      chain: params.token.chain,
+      token,
+      target,
+      chain,
       initialQuestion: params.initialQuestion ?? '',
       currentQuestion: params.initialQuestion ?? '',
       state: 'TOKEN_RESOLVED',
@@ -48,8 +89,8 @@ export class InvestigationManager {
           id: generateId('evnt'),
           timestamp: now,
           eventType: 'INVESTIGATION_INITIALIZED',
-          summary: `Investigation started for ${params.token.symbol} (${params.token.name}) on ${params.token.chain}`,
-          details: { tokenAddress: params.token.address, chain: params.token.chain },
+          summary,
+          details,
         },
       ],
       totalCreditsUsed: 0,
@@ -63,11 +104,22 @@ export class InvestigationManager {
     logger.info('Investigation started', {
       investigationId: id,
       chatId: params.telegramChatId,
-      token: params.token.symbol,
-      chain: params.token.chain,
+      targetType: target.type,
+      chain: target.chain,
+      symbol: token?.symbol,
     });
 
     return investigation;
+  }
+
+  public updateInvestigationTarget(id: string, target: InvestigationTarget): void {
+    const inv = this.getRequiredInvestigation(id);
+    inv.target = target;
+    inv.chain = target.chain;
+    if (target.type === 'token') {
+      inv.token = target.token;
+    }
+    inv.updatedAt = new Date().toISOString();
   }
 
   public getInvestigation(id: string): Investigation | undefined {

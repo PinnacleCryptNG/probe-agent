@@ -61,6 +61,29 @@ export function deriveEvidenceCategories(evidence: EvidenceItem[], symbol = 'ETH
   return Array.from(categories);
 }
 
+export function formatTransferItem(t: any, sym: string): string {
+  const usdVal = Number(t.amount_usd ?? t.amountUsd ?? t.transfer_value_usd ?? t.usd_value ?? 0);
+  const rawAmt = t.transfer_amount ?? t.amount;
+  const numAmt = typeof rawAmt === 'number' ? rawAmt : (rawAmt ? parseFloat(String(rawAmt)) : 0);
+
+  const from = t.from_label || t.fromLabel || t.from_address_label || t.fromAddressLabel || truncateAddress(t.from_address || t.fromAddress || t.from || '');
+  const to = t.to_label || t.toLabel || t.to_address_label || t.toAddressLabel || truncateAddress(t.to_address || t.toAddress || t.to || '');
+
+  let amtStr = '';
+  if (numAmt > 0) {
+    amtStr = `${numAmt.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${sym}`;
+  }
+
+  if (usdVal > 0) {
+    const usdStr = formatFlowUsd(usdVal, false);
+    return amtStr ? `${amtStr} (${usdStr}) from ${from} to ${to}` : `${usdStr} from ${from} to ${to}`;
+  } else if (amtStr) {
+    return `${amtStr} from ${from} to ${to}`;
+  } else {
+    return `Transfer from ${from} to ${to}`;
+  }
+}
+
 /**
  * Deterministically extracts key observations, direct headline, and interpretation
  * from normalized EvidenceItems without dumping raw API payloads.
@@ -74,7 +97,14 @@ export function extractDeterministicObservations(
   evidenceCategories: string[];
   unknowns: SynthesisUnknown[];
 } {
-  const symbol = request.tokenContext.symbol;
+  const symbol =
+    request.target?.type === 'token'
+      ? request.target.token.symbol
+      : request.target?.type === 'wallet'
+      ? truncateAddress(request.target.address)
+      : request.target?.type === 'chain'
+      ? request.target.chainDisplayName
+      : request.tokenContext.symbol;
   const qLower = request.question.toLowerCase();
   const isPriceQuestion = /price|cost|worth|valuation/i.test(qLower);
   const isWhaleQuestion = /whale/i.test(qLower);
@@ -91,7 +121,12 @@ export function extractDeterministicObservations(
   const flowEv = request.evidence.find((e) => e.provenance.capability === 'flow_intelligence');
   const tradeEv = request.evidence.find((e) => e.provenance.capability === 'who_bought_sold');
   const infoEv = request.evidence.find((e) => e.provenance.capability === 'token_information');
-  const transferEv = request.evidence.find((e) => e.provenance.capability === 'token_transfers');
+  const transferEv = request.evidence.find(
+    (e) =>
+      e.provenance.capability === 'token_transfers' ||
+      Array.isArray((e.normalizedData as any)?.transfers) ||
+      Array.isArray((e.rawPayload as any)?.transfers)
+  );
   const dexEv = request.evidence.find((e) => e.provenance.capability === 'dex_trades');
 
   let freshNet: number | undefined;
@@ -124,6 +159,21 @@ export function extractDeterministicObservations(
     topSeller = sellers[0];
     buyersCount = data.totalBuyersCount ?? buyers.length;
   }
+
+  const rawTransfers: any[] = Array.isArray((transferEv?.normalizedData as any)?.transfers)
+    ? [...(transferEv!.normalizedData as any).transfers]
+    : Array.isArray((transferEv?.rawPayload as any)?.transfers)
+    ? [...(transferEv!.rawPayload as any).transfers]
+    : [];
+
+  rawTransfers.sort((a, b) => {
+    const valA = Number(a.amount_usd ?? a.amountUsd ?? a.transfer_value_usd ?? a.usd_value ?? 0);
+    const valB = Number(b.amount_usd ?? b.amountUsd ?? b.transfer_value_usd ?? b.usd_value ?? 0);
+    if (valB !== valA) return valB - valA;
+    const amtA = Number(a.transfer_amount ?? a.amount ?? 0);
+    const amtB = Number(b.transfer_amount ?? b.amount ?? 0);
+    return amtB - amtA;
+  });
 
   // 1. Build Prioritized Key Observations (Surfacing direct answers first)
   if (isWhaleQuestion) {
@@ -255,21 +305,48 @@ export function extractDeterministicObservations(
       });
     }
   } else if (isTxQuestion) {
-    if (transferEv) {
+    if (rawTransfers.length > 0) {
+      rawTransfers.slice(0, 3).forEach((t, idx) => {
+        const rank = idx === 0 ? 'Largest transfer' : idx === 1 ? '2nd largest transfer' : '3rd largest transfer';
+        observations.push({
+          id: generateId('fnd'),
+          statement: `${rank}: ${formatTransferItem(t, symbol)}`,
+          evidenceRefs: [transferEv!.evidenceId],
+        });
+      });
+    } else if (transferEv) {
       observations.push({
         id: generateId('fnd'),
-        statement: `Large transfer activity detected across counterparty network`,
+        statement: `No large transfer transactions recorded above threshold for ${symbol} in the observed period`,
         evidenceRefs: [transferEv.evidenceId],
       });
     }
+
     if (dexEv) {
-      observations.push({
-        id: generateId('fnd'),
-        statement: `DEX swap executions monitored across decentralized exchange pools`,
-        evidenceRefs: [dexEv.evidenceId],
-      });
+      const rawTrades = Array.isArray((dexEv.normalizedData as any)?.trades)
+        ? [...(dexEv.normalizedData as any).trades]
+        : [];
+      rawTrades.sort((a, b) => Number(b.usd_value ?? b.estimated_value_usd ?? 0) - Number(a.usd_value ?? a.estimated_value_usd ?? 0));
+      if (rawTrades.length > 0 && observations.length < 4) {
+        const topTrade = rawTrades[0];
+        const val = Number(topTrade.usd_value ?? topTrade.estimated_value_usd ?? 0);
+        const dex = topTrade.dex_name || 'DEX';
+        const trader = topTrade.trader_label || topTrade.trader_address_label || truncateAddress(topTrade.trader_address || '');
+        const valStr = val > 0 ? ` (${formatFlowUsd(val, false)})` : '';
+        observations.push({
+          id: generateId('fnd'),
+          statement: `Largest DEX trade: ${topTrade.action || topTrade.trade_type || 'Swap'}${valStr} on ${dex} (trader: ${trader})`,
+          evidenceRefs: [dexEv.evidenceId],
+        });
+      } else if (observations.length === 0) {
+        observations.push({
+          id: generateId('fnd'),
+          statement: `DEX swap executions monitored across decentralized exchange pools`,
+          evidenceRefs: [dexEv.evidenceId],
+        });
+      }
     }
-    if (topBuyer && tradeEv) {
+    if (topBuyer && tradeEv && observations.length < 5) {
       const addr = topBuyer.address_label || topBuyer.label || truncateAddress(topBuyer.address || '');
       observations.push({
         id: generateId('fnd'),
@@ -277,7 +354,7 @@ export function extractDeterministicObservations(
         evidenceRefs: [tradeEv.evidenceId],
       });
     }
-    if (freshNet !== undefined && flowEv) {
+    if (freshNet !== undefined && flowEv && observations.length < 5) {
       observations.push({
         id: generateId('fnd'),
         statement: `Fresh wallets: ${formatFlowUsd(Number(freshNet))} net flow`,
@@ -381,7 +458,11 @@ export function extractDeterministicObservations(
       headline = `No prominent seller concentration identified across monitored cohorts in ${symbol}.`;
     }
   } else if (isTxQuestion) {
-    headline = `High-volume transfer and swap activity recorded across ${symbol} counterparties.`;
+    if (rawTransfers.length > 0) {
+      headline = `Largest recorded transfer for ${symbol} was ${formatTransferItem(rawTransfers[0], symbol)}.`;
+    } else {
+      headline = `High-volume transfer and swap activity recorded across ${symbol} counterparties.`;
+    }
   } else if (isChangeQuestion) {
     if (freshNet !== undefined && exNet !== undefined) {
       headline = `Recent activity shows ${formatFlowUsd(Number(freshNet))} in fresh-wallet net inflows and ${formatFlowUsd(Number(exNet))} in exchange net flows.`;
@@ -500,7 +581,14 @@ export class EvidenceSynthesisEngine {
    */
   public async synthesize(request: SynthesisRequest): Promise<SynthesisResult> {
     const createdAt = new Date().toISOString();
-    const symbol = request.tokenContext.symbol;
+    const symbol =
+      request.target?.type === 'token'
+        ? request.target.token.symbol
+        : request.target?.type === 'wallet'
+        ? truncateAddress(request.target.address)
+        : request.target?.type === 'chain'
+        ? request.target.chainDisplayName
+        : request.tokenContext.symbol;
 
     logger.info('Synthesizing evidence for investigation', {
       investigationId: request.investigationId,

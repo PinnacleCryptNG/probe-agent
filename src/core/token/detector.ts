@@ -1,5 +1,7 @@
 import { TokenCandidate } from './types.js';
 import { TokenContext } from '../../types/domain.js';
+import { getChainDisplayName, normalizeChain } from '../target/chain-resolver.js';
+import { isNativeAssetTicker } from '../target/native-assets.js';
 
 const EXCLUDED_WORDS = new Set([
   'IS', 'IT', 'AT', 'ON', 'IN', 'TO', 'SO', 'NO', 'MY', 'UP', 'DO', 'IF', 'ME', 'WE', 'US', 'OR', 'BY', 'AN', 'AS', 'HE',
@@ -11,29 +13,6 @@ const EXCLUDED_WORDS = new Set([
   'WHICH', 'WHERE', 'THERE', 'THEIR', 'ABOUT', 'THESE', 'THOSE', 'PLEASE',
   'TOKEN', 'COIN', 'CHAIN', 'NETWORK', 'CONTRACT', 'ADDRESS',
 ]);
-
-const CHAIN_MAP: Record<string, string> = {
-  solana: 'Solana',
-  ethereum: 'Ethereum',
-  arbitrum: 'Arbitrum',
-  polygon: 'Polygon',
-  optimism: 'Optimism',
-  base: 'Base',
-  avalanche: 'Avalanche',
-  bsc: 'BSC',
-  binance: 'BSC',
-  fantom: 'Fantom',
-  blast: 'Blast',
-  linea: 'Linea',
-  mantle: 'Mantle',
-  scroll: 'Scroll',
-  zksync: 'zkSync',
-  starknet: 'Starknet',
-  aptos: 'Aptos',
-  sui: 'Sui',
-  near: 'NEAR',
-  tron: 'Tron',
-};
 
 const COMMON_TICKERS = new Set([
   'ETH', 'SOL', 'BTC', 'WBTC', 'USDC', 'USDT', 'DAI', 'UNI', 'PEPE', 'LINK',
@@ -54,14 +33,11 @@ const SOLANA_ADDRESS_IN_TEXT_REGEX = /\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/;
  * E.g. "solana", "ethereum", "on solana", "base".
  */
 export function detectChainOnlyInput(text: string): string | undefined {
-  const cleaned = text
-    .trim()
-    .toLowerCase()
-    .replace(/^(chain|network):\s*/, '')
-    .replace(/^on\s+/, '')
-    .trim();
-
-  return CHAIN_MAP[cleaned];
+  const norm = normalizeChain(text);
+  if (norm) {
+    return getChainDisplayName(norm);
+  }
+  return undefined;
 }
 
 /**
@@ -201,7 +177,7 @@ export function extractTokenCandidate(text: string): TokenCandidate | undefined 
       !EXCLUDED_WORDS.has(upper) &&
       !detectChainOnlyInput(word) &&
       !/^\d+$/.test(word) &&
-      (word === upper || COMMON_TICKERS.has(upper))
+      (word === upper || COMMON_TICKERS.has(upper) || isNativeAssetTicker(upper))
     ) {
       return {
         identifier: upper,
@@ -256,6 +232,15 @@ export function extractTokenFromText(text: string): TokenContext | undefined {
       symbol: 'SOL',
       name: 'Solana',
       chain: 'solana',
+      resolvedAt: new Date().toISOString(),
+    };
+  }
+  if (sym === 'BTC' || sym === 'WBTC') {
+    return {
+      address: '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599',
+      symbol: sym,
+      name: sym === 'WBTC' ? 'Wrapped BTC' : 'Bitcoin',
+      chain: candidate.detectedChain || 'ethereum',
       resolvedAt: new Date().toISOString(),
     };
   }
