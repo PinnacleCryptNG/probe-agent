@@ -3,6 +3,7 @@ export type {
   TokenTarget,
   ChainTarget,
   WalletTarget,
+  TransactionTarget,
   InvestigationTargetType,
 } from '../../types/domain.js';
 
@@ -11,6 +12,7 @@ export {
   TokenTargetSchema,
   ChainTargetSchema,
   WalletTargetSchema,
+  TransactionTargetSchema,
 } from '../../types/domain.js';
 
 import { InvestigationTarget } from '../../types/domain.js';
@@ -43,7 +45,7 @@ export interface UnresolvedTargetResult {
   source: TargetResolutionSource;
   availableChains?: string[];
   candidateIdentifier?: string;
-  candidateType?: 'token' | 'wallet';
+  candidateType?: 'token' | 'wallet' | 'transaction' | 'chain';
   clarificationMessage?: string;
 }
 
@@ -58,6 +60,11 @@ export type PendingResolutionContext =
   | {
       type: 'wallet';
       address: string;
+      selectedChain?: string;
+    }
+  | {
+      type: 'transaction';
+      transactionHash: string;
       selectedChain?: string;
     };
 

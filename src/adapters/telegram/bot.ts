@@ -327,7 +327,9 @@ export class ProbeTelegramBot {
           ? target.token.symbol
           : target.type === 'chain'
           ? target.chainDisplayName
-          : target.label || truncateAddress(target.address);
+          : target.type === 'wallet'
+          ? target.label || truncateAddress(target.address)
+          : truncateAddress(target.transactionHash);
 
       // Initialize Telegram progress feedback tracker and send initial progress message immediately
       const progressTracker = new TelegramProgressTracker({

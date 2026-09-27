@@ -19,6 +19,16 @@ const CAUSAL_PATTERNS = [
   /\bthe reason for the dump\b/i,
 ];
 
+export const UNSUPPORTED_ABSENCE_EXPLANATION_PATTERNS = [
+  /\b(this\s+)?(indicates|means|suggests|implies)\s+(that\s+)?(the\s+wallet\s+)?(completely\s+)?(liquidated|transferred|dumped|emptied|moved|sold)/i,
+  /\bfunctions?\s+as\s+(an?\s+)?intermediary\b/i,
+  /\bwallet\s+(has\s+)?(completely\s+)?liquidated\b/i,
+  /\btransferred\s+(its\s+)?assets\s+(elsewhere|away|out)\b/i,
+  /\b(0|zero|no)\s+(current\s+)?(token\s+)?(holdings|positions|assets)\s+(indicates|means|suggests|implies|shows)\b/i,
+  /\bliquidated\s+(its\s+|all\s+)?positions\b/i,
+  /\b(likely|probably|appears\s+to\s+be|may\s+have)\s+(liquidated|transferred\s+assets|an\s+intermediary)\b/i,
+];
+
 export class EvidenceValidator {
   /**
    * Validates a candidate SynthesisResult against supplied evidence items and investigation boundaries.
@@ -96,6 +106,18 @@ export class EvidenceValidator {
         }
       }
 
+      // Check for unsupported causal explanations from absence of holdings / data
+      for (const pat of UNSUPPORTED_ABSENCE_EXPLANATION_PATTERNS) {
+        if (pat.test(obs.statement)) {
+          errors.push({
+            code: 'UNSUPPORTED_CAUSAL_INFERENCE_FROM_ABSENCE',
+            message: `Observation '${obs.id}' makes an unsupported causal explanation from absence of holdings or lack of data: "${obs.statement}".`,
+            claimId: obs.id,
+          });
+          break;
+        }
+      }
+
       // Check for hallucinated transaction hashes
       this.checkEntityHallucinations(obs.id, obs.statement, knownAddresses, knownHashes, errors);
     }
@@ -118,6 +140,18 @@ export class EvidenceValidator {
               invalidEvidenceRef: ref,
             });
           }
+        }
+      }
+
+      // Check for unsupported causal explanations from absence of holdings / data in interpretations
+      for (const pat of UNSUPPORTED_ABSENCE_EXPLANATION_PATTERNS) {
+        if (pat.test(interp.statement)) {
+          errors.push({
+            code: 'UNSUPPORTED_CAUSAL_INFERENCE_FROM_ABSENCE',
+            message: `Interpretation '${interp.id}' makes an unsupported causal explanation from absence of holdings or lack of data: "${interp.statement}".`,
+            claimId: interp.id,
+          });
+          break;
         }
       }
 

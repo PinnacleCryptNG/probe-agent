@@ -58,7 +58,14 @@ export class InvestigationPlanner {
       planId,
       question: trimmedQuestion,
       targetType: target?.type,
-      targetIdentifier: target?.type === 'token' ? target.token.symbol : target?.type === 'wallet' ? target.address : target?.chainDisplayName,
+      targetIdentifier:
+        target?.type === 'token'
+          ? target.token.symbol
+          : target?.type === 'wallet'
+          ? target.address
+          : target?.type === 'chain'
+          ? target.chainDisplayName
+          : target?.transactionHash,
       chain,
     });
 
@@ -154,6 +161,27 @@ export class InvestigationPlanner {
    */
   public classifyIntent(question: string, context?: PlannerContext): PlannerIntent {
     const q = question.toLowerCase();
+
+    // 0a. Transaction target or transaction hash
+    if (context?.target?.type === 'transaction' || /\b0x[a-fA-F0-9]{64}\b/i.test(q)) {
+      return 'transaction_inspection';
+    }
+
+    // 0b. Wallet target priority routing
+    if (context?.target?.type === 'wallet') {
+      if (
+        q.includes('funder') ||
+        q.includes('funded') ||
+        q.includes('funding') ||
+        q.includes('counterpart') ||
+        q.includes('related') ||
+        q.includes('connected') ||
+        q.includes('cluster')
+      ) {
+        return 'wallet_relationships';
+      }
+      return 'wallet_activity';
+    }
 
     // 1. Check for follow-up context pronouns or references (e.g. "those tokens afterward", "why?", "who did that?")
     const isFollowUp =
@@ -344,7 +372,6 @@ export class InvestigationPlanner {
 
     // 12. Specific wallet activity & balances
     const isWalletContext =
-      context?.target?.type === 'wallet' ||
       context?.targetWalletAddress !== undefined ||
       /\b0x[a-fA-F0-9]{40}\b/i.test(q);
 

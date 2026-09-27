@@ -86,6 +86,249 @@ export class RequirementFormulator {
     const timeWindow = parseTimeWindow(question);
     const defaultDate = timeWindow.dateRange;
 
+    // ==========================================
+    // 1. TRANSACTION INVESTIGATION TARGET
+    // ==========================================
+    if (target?.type === 'transaction' || intent === 'transaction_inspection') {
+      const txHash =
+        (target?.type === 'transaction' ? target.transactionHash : undefined) ||
+        (q.match(/0x[a-fA-F0-9]{64}/)?.[0] ?? '');
+      return [
+        {
+          id: generateId('req'),
+          concept: 'transaction execution and internal transfer decode',
+          priority: 'required',
+          rationale: 'Decode transaction status, sender, recipient, internal token transfers, and value',
+          candidateCapabilities: ['transaction_deep_dive'],
+          parameters: { transaction_hash: txHash, chain },
+        },
+      ];
+    }
+
+    // ==========================================
+    // 2. WALLET INVESTIGATION TARGET
+    // ==========================================
+    if (target?.type === 'wallet') {
+      const targetWallet =
+        context.targetWalletAddress ||
+        target.address ||
+        (q.match(/0x[a-fA-F0-9]{40}/)?.[0] ?? '');
+
+      // Specific question: first funder
+      if (q.includes('funder') || q.includes('funded') || q.includes('funding') || q.includes('who funded')) {
+        return [
+          {
+            id: generateId('req'),
+            concept: 'first funder origin identity',
+            priority: 'required',
+            rationale: 'Trace origin gas funding source to discover creator or parent entity',
+            candidateCapabilities: ['wallet_first_funder'],
+            parameters: { address: targetWallet, chain },
+          },
+          {
+            id: generateId('req'),
+            concept: 'co-controlled related wallet clusters',
+            priority: 'optional',
+            rationale: 'Discover address clusters exhibiting shared ownership or coordinated transfers',
+            candidateCapabilities: ['wallet_related'],
+            parameters: { address: targetWallet, chain },
+          },
+        ];
+      }
+
+      // Specific question: counterparties
+      if (q.includes('counterpart') || q.includes('who does it interact with') || q.includes('interact with')) {
+        return [
+          {
+            id: generateId('req'),
+            concept: 'frequent counterparty network',
+            priority: 'required',
+            rationale: 'Map highest-frequency transaction destinations and counterparties',
+            candidateCapabilities: ['wallet_counterparties'],
+            parameters: { address: targetWallet, chain },
+          },
+        ];
+      }
+
+      // Specific question: related wallets
+      if (q.includes('related wallet') || q.includes('related wallets') || q.includes('connected') || q.includes('cluster')) {
+        return [
+          {
+            id: generateId('req'),
+            concept: 'co-controlled related wallet clusters',
+            priority: 'required',
+            rationale: 'Discover address clusters exhibiting shared ownership or coordinated transfers',
+            candidateCapabilities: ['wallet_related'],
+            parameters: { address: targetWallet, chain },
+          },
+        ];
+      }
+
+      // Specific question: biggest transactions / transaction history
+      if (q.includes('transaction') || q.includes('transfer') || q.includes('history') || q.includes('tx')) {
+        return [
+          {
+            id: generateId('req'),
+            concept: 'wallet transaction history',
+            priority: 'required',
+            rationale: 'Inspect recent on-chain transactions and call methods executed by target wallet',
+            candidateCapabilities: ['wallet_transactions'],
+            parameters: { address: targetWallet, chain },
+          },
+        ];
+      }
+
+      // Specific question: balance / holdings
+      if (q.includes('balance') || q.includes('holding') || q.includes('portfolio') || q.includes('worth')) {
+        return [
+          {
+            id: generateId('req'),
+            concept: 'wallet current asset holdings',
+            priority: 'required',
+            rationale: 'Determine current portfolio value and token balances',
+            candidateCapabilities: ['wallet_current_balance'],
+            parameters: { address: targetWallet, chain },
+          },
+        ];
+      }
+
+      // Normal wallet investigation (attempts to establish A-F: holdings, activity, funding, counterparties, related)
+      return [
+        {
+          id: generateId('req'),
+          concept: 'wallet current asset holdings',
+          priority: 'required',
+          rationale: 'Determine current portfolio value and token balances',
+          candidateCapabilities: ['wallet_current_balance'],
+          parameters: { address: targetWallet, chain },
+        },
+        {
+          id: generateId('req'),
+          concept: 'wallet transaction history',
+          priority: 'required',
+          rationale: 'Inspect recent on-chain transactions and call methods executed by target wallet',
+          candidateCapabilities: ['wallet_transactions'],
+          parameters: { address: targetWallet, chain },
+        },
+        {
+          id: generateId('req'),
+          concept: 'first funder origin identity',
+          priority: 'optional',
+          rationale: 'Trace origin gas funding source to discover creator or parent entity',
+          candidateCapabilities: ['wallet_first_funder'],
+          parameters: { address: targetWallet, chain },
+        },
+        {
+          id: generateId('req'),
+          concept: 'frequent counterparty network',
+          priority: 'optional',
+          rationale: 'Map highest-frequency transaction destinations',
+          candidateCapabilities: ['wallet_counterparties'],
+          parameters: { address: targetWallet, chain },
+        },
+        {
+          id: generateId('req'),
+          concept: 'co-controlled related wallet clusters',
+          priority: 'optional',
+          rationale: 'Discover address clusters exhibiting shared ownership or coordinated transfers',
+          candidateCapabilities: ['wallet_related'],
+          parameters: { address: targetWallet, chain },
+        },
+      ];
+    }
+
+    // ==========================================
+    // 3. CHAIN INVESTIGATION TARGET
+    // ==========================================
+    if (target?.type === 'chain') {
+      const native = getNativeAssetForChain(chain);
+      const nativeAddress = native?.address || tokenAddress;
+
+      // Chain + "biggest transactions"
+      if (
+        intent === 'large_transactions' ||
+        q.includes('biggest transaction') ||
+        q.includes('largest transaction') ||
+        q.includes('transfers')
+      ) {
+        return [
+          {
+            id: generateId('req'),
+            concept: 'chain native asset large transactions and transfers',
+            priority: 'required',
+            rationale: `Inspect highest-value token transfers on ${target.chainDisplayName}`,
+            candidateCapabilities: ['token_transfers'],
+            parameters: {
+              token_address: nativeAddress,
+              chain,
+              date: defaultDate,
+              time_window: timeWindow.label,
+              timeframe: timeWindow.timeframe,
+            },
+          },
+        ];
+      }
+
+      // Chain + "biggest whales" / "smart money" / "who is buying"
+      if (
+        intent === 'flow_analysis' ||
+        intent === 'accumulation' ||
+        q.includes('whale') ||
+        q.includes('whales') ||
+        q.includes('smart money')
+      ) {
+        return [
+          {
+            id: generateId('req'),
+            concept: 'chain cohort flow distributions',
+            priority: 'required',
+            rationale: `Evaluate whale and smart money flows on ${target.chainDisplayName}`,
+            candidateCapabilities: ['flow_intelligence'],
+            parameters: { token_address: nativeAddress, chain, timeframe: timeWindow.timeframe },
+          },
+          {
+            id: generateId('req'),
+            concept: 'top buyers and sellers on chain native asset',
+            priority: 'optional',
+            rationale: `Identify largest accumulating and distributing wallets on ${target.chainDisplayName}`,
+            candidateCapabilities: ['who_bought_sold'],
+            parameters: { token_address: nativeAddress, chain, date: defaultDate },
+          },
+        ];
+      }
+
+      // Chain + "what is happening?" / general chain investigation
+      return [
+        {
+          id: generateId('req'),
+          concept: 'chain native asset spot metrics',
+          priority: 'required',
+          rationale: `Establish baseline price, volume, and valuation for native asset on ${target.chainDisplayName}`,
+          candidateCapabilities: ['token_information'],
+          parameters: { token_address: nativeAddress, chain, timeframe: timeWindow.timeframe },
+        },
+        {
+          id: generateId('req'),
+          concept: 'chain cohort net flow intelligence',
+          priority: 'required',
+          rationale: `Identify whether whales, smart money, or fresh wallets are driving flows on ${target.chainDisplayName}`,
+          candidateCapabilities: ['flow_intelligence'],
+          parameters: { token_address: nativeAddress, chain, timeframe: timeWindow.timeframe },
+        },
+        {
+          id: generateId('req'),
+          concept: 'chain large transfer activity',
+          priority: 'optional',
+          rationale: `Observe major native asset movements on ${target.chainDisplayName}`,
+          candidateCapabilities: ['token_transfers'],
+          parameters: { token_address: nativeAddress, chain, date: defaultDate },
+        },
+      ];
+    }
+
+    // ==========================================
+    // 4. TOKEN INVESTIGATION TARGET (DEFAULT)
+    // ==========================================
     switch (intent) {
       case 'activity_change': {
         // e.g. "Why is this token suddenly pumping?", "Why did volume spike?"
@@ -277,7 +520,6 @@ export class RequirementFormulator {
       case 'wallet_activity': {
         const targetWallet =
           context.targetWalletAddress ||
-          (target?.type === 'wallet' ? target.address : undefined) ||
           (q.match(/0x[a-fA-F0-9]{40}/)?.[0] ?? '');
 
         // If user specifically asked about balance / holdings / portfolio
@@ -340,7 +582,6 @@ export class RequirementFormulator {
       case 'wallet_relationships': {
         const targetWallet =
           context.targetWalletAddress ||
-          (target?.type === 'wallet' ? target.address : undefined) ||
           (q.match(/0x[a-fA-F0-9]{40}/)?.[0] ?? '');
 
         // If user specifically asked who funded the wallet

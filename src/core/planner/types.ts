@@ -16,6 +16,7 @@ export const PlannerIntentSchema = z.enum([
   'historical_comparison',
   'flow_analysis',
   'wallet_relationships',
+  'transaction_inspection',
   'unknown',
 ]);
 

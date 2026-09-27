@@ -82,6 +82,7 @@ export class TargetResolver implements ITargetResolver {
     string,
     | { type: 'token'; symbol: string; selectedChain?: string; timestamp: number }
     | { type: 'wallet'; address: string; selectedChain?: string; timestamp: number }
+    | { type: 'transaction'; transactionHash: string; selectedChain?: string; timestamp: number }
   >();
 
   constructor(deps?: ITokenResolver | { tokenResolver?: ITokenResolver }) {
@@ -97,6 +98,7 @@ export class TargetResolver implements ITargetResolver {
     pending:
       | { type: 'token'; symbol: string; selectedChain?: string }
       | { type: 'wallet'; address: string; selectedChain?: string }
+      | { type: 'transaction'; transactionHash: string; selectedChain?: string }
   ): void {
     this.pendingByChatId.set(String(chatId), {
       ...pending,
@@ -109,6 +111,7 @@ export class TargetResolver implements ITargetResolver {
   ):
     | { type: 'token'; symbol: string; selectedChain?: string; timestamp: number }
     | { type: 'wallet'; address: string; selectedChain?: string; timestamp: number }
+    | { type: 'transaction'; transactionHash: string; selectedChain?: string; timestamp: number }
     | undefined {
     return this.pendingByChatId.get(String(chatId));
   }
@@ -144,7 +147,7 @@ export class TargetResolver implements ITargetResolver {
 
   /**
    * Deterministically resolves an InvestigationTarget using strict precedence rules:
-   * 1. Explicit target in current message
+   * 1. Explicit target in current message (transaction, wallet, token, chain)
    * 2. Explicit target + explicit chain in current message
    * 3. Existing investigation context
    * 4. Ask user for target
@@ -170,29 +173,46 @@ export class TargetResolver implements ITargetResolver {
       };
     }
 
-    // Step 0: Check if answering a pending wallet clarification with a chain
-    if (pendingContext && pendingContext.type === 'wallet') {
-      const chainOnly = detectChainOnlyInput(question);
-      const standaloneChain = normalizeChain(question);
-      const explicitInMsg = extractExplicitChain(question);
-      const resolvedChain = chainOnly
-        ? normalizeChain(chainOnly) || chainOnly.toLowerCase()
-        : standaloneChain || explicitInMsg?.chain;
+    // Extract explicit chain context if mentioned ("on Ethereum", "on Solana", etc.)
+    const explicitChainInfo = extractExplicitChain(question);
+    const chainOnly = detectChainOnlyInput(question);
+    const standaloneChain = normalizeChain(question);
+    const resolvedChainFromInput = chainOnly
+      ? normalizeChain(chainOnly) || chainOnly.toLowerCase()
+      : standaloneChain || explicitChainInfo?.chain;
 
-      if (resolvedChain) {
+    const pendingChain = options.pendingResolution?.selectedChain || (chatIdKey ? this.getPendingResolution(chatIdKey)?.selectedChain : undefined);
+    const contextChain =
+      options.defaultChain ||
+      pendingChain ||
+      (options.existingTarget?.type === 'chain'
+        ? options.existingTarget.chain
+        : options.existingTarget?.chain);
+
+    const targetChain = explicitChainInfo?.chain || contextChain;
+
+    // Text with the explicit chain clause masked to prevent chain words from being misidentified as tokens
+    let textWithoutChain = question;
+    if (explicitChainInfo) {
+      textWithoutChain = question.replace(explicitChainInfo.rawMatch, ' ');
+    }
+
+    // Step 0A: Check if answering a pending wallet clarification with a chain
+    if (pendingContext && pendingContext.type === 'wallet') {
+      if (resolvedChainFromInput) {
         if (chatIdKey) {
           this.clearPendingResolution(chatIdKey);
         }
         const walletTarget: InvestigationTarget = {
           type: 'wallet',
           address: pendingContext.address,
-          chain: resolvedChain,
+          chain: resolvedChainFromInput,
           rawIdentifier: pendingContext.address,
-          explicitChain: resolvedChain,
+          explicitChain: resolvedChainFromInput,
         };
         logger.info('Wallet target resolved via pending clarification', {
           address: pendingContext.address,
-          chain: resolvedChain,
+          chain: resolvedChainFromInput,
         });
         return {
           status: 'RESOLVED',
@@ -202,8 +222,85 @@ export class TargetResolver implements ITargetResolver {
       }
     }
 
-    // Step 0b: Check for standalone chain input (e.g. "solana", "on solana", "network: base", "arbitrum")
-    const chainOnly = detectChainOnlyInput(question);
+    // Step 0B: Check if answering a pending transaction clarification with a chain
+    if (pendingContext && pendingContext.type === 'transaction') {
+      if (resolvedChainFromInput) {
+        if (chatIdKey) {
+          this.clearPendingResolution(chatIdKey);
+        }
+        const txTarget: InvestigationTarget = {
+          type: 'transaction',
+          transactionHash: pendingContext.transactionHash,
+          chain: resolvedChainFromInput,
+          rawIdentifier: pendingContext.transactionHash,
+          explicitChain: resolvedChainFromInput,
+        };
+        logger.info('Transaction target resolved via pending clarification', {
+          transactionHash: pendingContext.transactionHash,
+          chain: resolvedChainFromInput,
+        });
+        return {
+          status: 'RESOLVED',
+          target: txTarget,
+          source: 'explicit_message_with_chain',
+        };
+      }
+    }
+
+    // Step 0C: Active wallet target + chain change ("Ethereum", "on Base", "Solana")
+    // When active target is a wallet and the user inputs a chain without specifying a new token/wallet/tx target,
+    // the wallet remains the target, and its chain updates.
+    const activeWallet = options.existingTarget?.type === 'wallet' ? options.existingTarget : undefined;
+    if (activeWallet && resolvedChainFromInput) {
+      const hasExplicitToken = this.detectTokenCandidate(textWithoutChain, resolvedChainFromInput);
+      const hasExplicitWalletOrTx = /\b0x[a-fA-F0-9]{40,64}\b/i.test(question);
+      if (!hasExplicitToken && !hasExplicitWalletOrTx) {
+        if (chatIdKey) {
+          this.clearPendingResolution(chatIdKey);
+        }
+        const switchedWallet: InvestigationTarget = {
+          type: 'wallet',
+          address: activeWallet.address,
+          chain: resolvedChainFromInput,
+          rawIdentifier: activeWallet.rawIdentifier || activeWallet.address,
+          explicitChain: resolvedChainFromInput,
+        };
+        logger.info('Switched active wallet target chain', {
+          address: switchedWallet.address,
+          chain: switchedWallet.chain,
+        });
+        return {
+          status: 'RESOLVED',
+          target: switchedWallet,
+          source: 'explicit_message_with_chain',
+        };
+      }
+    }
+
+    // Step 1: Precedence Rule 0 - Explicit Transaction Hash (66 hex characters: 0x + 64 hex)
+    const txMatch = question.match(/\b0x[a-fA-F0-9]{64}\b/i);
+    if (txMatch) {
+      const hash = txMatch[0].toLowerCase();
+      const txChain = explicitChainInfo?.chain || contextChain || 'ethereum';
+      if (chatIdKey) {
+        this.clearPendingResolution(chatIdKey);
+      }
+      const txTarget: InvestigationTarget = {
+        type: 'transaction',
+        transactionHash: hash,
+        chain: txChain,
+        rawIdentifier: txMatch[0],
+        explicitChain: explicitChainInfo?.chain,
+      };
+      logger.info('Explicit transaction target resolved', { transactionHash: hash, chain: txChain });
+      return {
+        status: 'RESOLVED',
+        target: txTarget,
+        source: explicitChainInfo ? 'explicit_message_with_chain' : (contextChain ? 'existing_context' : 'explicit_message'),
+      };
+    }
+
+    // Step 2: Check for standalone chain input (e.g. "solana", "on solana", "network: base", "arbitrum")
     if (chainOnly) {
       const canonicalChain = normalizeChain(chainOnly) || chainOnly.toLowerCase();
       if (chatIdKey && pendingContext && pendingContext.type === 'token') {
@@ -226,53 +323,7 @@ export class TargetResolver implements ITargetResolver {
       };
     }
 
-    // Step 1: Extract explicit chain context if mentioned ("on Ethereum", "on Solana", etc.)
-    const explicitChainInfo = extractExplicitChain(question);
-    const pendingChain = options.pendingResolution?.selectedChain || (chatIdKey ? this.getPendingResolution(chatIdKey)?.selectedChain : undefined);
-    const contextChain =
-      options.defaultChain ||
-      pendingChain ||
-      (options.existingTarget?.type === 'chain'
-        ? options.existingTarget.chain
-        : options.existingTarget?.chain);
-
-    const targetChain = explicitChainInfo?.chain || contextChain;
-
-    // Text with the explicit chain clause masked to prevent chain words from being misidentified as tokens
-    let textWithoutChain = question;
-    if (explicitChainInfo) {
-      textWithoutChain = question.replace(explicitChainInfo.rawMatch, ' ');
-    }
-
-    // Step 1B: If active target is a wallet and user switches chain ("What about this wallet on Base?")
-    const activeWallet = options.existingTarget?.type === 'wallet' ? options.existingTarget : undefined;
-    if (
-      activeWallet &&
-      explicitChainInfo &&
-      (question.toLowerCase().includes('wallet') || !this.detectTokenCandidate(textWithoutChain, targetChain))
-    ) {
-      if (chatIdKey) {
-        this.clearPendingResolution(chatIdKey);
-      }
-      const switchedWallet: InvestigationTarget = {
-        type: 'wallet',
-        address: activeWallet.address,
-        chain: explicitChainInfo.chain,
-        rawIdentifier: activeWallet.rawIdentifier || activeWallet.address,
-        explicitChain: explicitChainInfo.chain,
-      };
-      logger.info('Switched active wallet target chain', {
-        address: switchedWallet.address,
-        chain: switchedWallet.chain,
-      });
-      return {
-        status: 'RESOLVED',
-        target: switchedWallet,
-        source: 'explicit_message_with_chain',
-      };
-    }
-
-    // Step 2: Precedence Rule 1 - Explicit wallet/address syntax
+    // Step 3: Precedence Rule 1 - Explicit wallet/address syntax (42 hex characters: 0x + 40 hex)
     const walletMatch = this.detectWalletCandidate(question, targetChain);
     if (walletMatch) {
       if (walletMatch.chain) {
@@ -306,10 +357,10 @@ export class TargetResolver implements ITargetResolver {
       };
     }
 
-    // Malformed address checks
+    // Malformed address checks (ignore 66-character tx hashes and explicit token contract syntax)
     const isExplicitTokenSyntax = /(?:token|contract|\$)\s*0x[a-fA-F0-9]{40}\b/i.test(question);
     const malformedEvm = question.match(/\b0x[a-zA-Z0-9]+\b/);
-    if (malformedEvm && malformedEvm[0].length !== 42 && !isExplicitTokenSyntax) {
+    if (malformedEvm && malformedEvm[0].length !== 42 && malformedEvm[0].length !== 66 && !isExplicitTokenSyntax) {
       return {
         status: 'INVALID_ADDRESS',
         candidateIdentifier: malformedEvm[0],
@@ -530,7 +581,6 @@ export class TargetResolver implements ITargetResolver {
     }
 
     // Check standalone chain input without "on" (e.g. user simply typed "solana", "base", "ethereum")
-    const standaloneChain = normalizeChain(question);
     if (standaloneChain) {
       if (chatIdKey && pendingContext && pendingContext.type === 'token') {
         this.setPendingResolution(chatIdKey, {
@@ -563,7 +613,9 @@ export class TargetResolver implements ITargetResolver {
             ? options.existingTarget.token.symbol
             : options.existingTarget.type === 'wallet'
             ? options.existingTarget.address
-            : options.existingTarget.chainDisplayName,
+            : options.existingTarget.type === 'chain'
+            ? options.existingTarget.chainDisplayName
+            : options.existingTarget.transactionHash,
       });
 
       return {
@@ -646,9 +698,9 @@ export class TargetResolver implements ITargetResolver {
       };
     }
 
-    // Check for malformed EVM address (e.g. "0xinvalidaddress123")
+    // Check for malformed EVM address (e.g. "0xinvalidaddress123", but ignore 66-char tx hashes)
     const malformedEvm = trimmed.match(/\b0x[a-zA-Z0-9]+\b/);
-    if (malformedEvm && malformedEvm[0].length !== 42) {
+    if (malformedEvm && malformedEvm[0].length !== 42 && malformedEvm[0].length !== 66) {
       return {
         identifier: malformedEvm[0],
         type: 'invalid_address',

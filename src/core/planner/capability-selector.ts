@@ -116,6 +116,21 @@ export class CapabilitySelector {
           }
         }
 
+        if (capName === 'transaction_deep_dive' && !params.transaction_hash) {
+          const targetTx =
+            (context.target?.type === 'transaction' ? context.target.transactionHash : undefined) ||
+            (req.parameters.transaction_hash as string | undefined);
+          if (targetTx) {
+            params.transaction_hash = targetTx;
+          } else {
+            warnings.push({
+              code: 'MISSING_TRANSACTION_INPUT',
+              message: `Capability '${capName}' requires a transaction_hash which was not provided in context.`,
+            });
+            continue;
+          }
+        }
+
         // 4. Validate inputs against schema
         const validation = this.registry.validateInputs(capName, params);
         if (!validation.success) {
@@ -180,7 +195,8 @@ export class CapabilitySelector {
     }
 
     // 8. Turn budget checks
-    const maxCalls = context.maxCallsAllowed ?? 4;
+    const defaultMaxCalls = context.target?.type === 'wallet' ? 5 : 4;
+    const maxCalls = context.maxCallsAllowed ?? defaultMaxCalls;
     let selectedCapabilities = Array.from(selectedCapSet);
 
     if (selectedCapabilities.length > maxCalls) {

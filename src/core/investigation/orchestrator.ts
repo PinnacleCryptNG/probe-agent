@@ -187,19 +187,24 @@ export class InvestigationOrchestrator {
     const resolvedTarget = resolution.target;
 
     // Check if user explicitly switched to a new target
-    const isNewTarget =
-      !existingInv ||
+    const isSameTarget =
+      existingInv?.target &&
+      existingInv.target.type === resolvedTarget.type &&
       (resolvedTarget.type === 'token'
-        ? !existingInv.token ||
-          existingInv.token.symbol !== resolvedTarget.token.symbol ||
-          existingInv.token.chain !== resolvedTarget.token.chain
-        : resolvedTarget.type === 'chain'
-        ? !existingInv.target ||
-          existingInv.target.type !== 'chain' ||
-          existingInv.target.chain !== resolvedTarget.chain
-        : !existingInv.target ||
-          existingInv.target.type !== 'wallet' ||
-          existingInv.target.address.toLowerCase() !== resolvedTarget.address.toLowerCase());
+        ? existingInv.token?.symbol === resolvedTarget.token.symbol &&
+          existingInv.token?.chain === resolvedTarget.token.chain
+        : resolvedTarget.type === 'wallet'
+        ? existingInv.target.type === 'wallet' &&
+          existingInv.target.address.toLowerCase() === resolvedTarget.address.toLowerCase() &&
+          existingInv.target.chain === resolvedTarget.chain
+        : resolvedTarget.type === 'transaction'
+        ? existingInv.target.type === 'transaction' &&
+          existingInv.target.transactionHash.toLowerCase() === resolvedTarget.transactionHash.toLowerCase() &&
+          existingInv.target.chain === resolvedTarget.chain
+        : existingInv.target.type === 'chain' &&
+          existingInv.target.chain === resolvedTarget.chain);
+
+    const isNewTarget = !isSameTarget;
 
     if (isNewTarget && resolution.source !== 'existing_context') {
       if (request.chatId !== undefined) {
@@ -246,12 +251,22 @@ export class InvestigationOrchestrator {
         resolvedAt: new Date().toISOString(),
         decimals: 18,
       };
-    } else {
+    } else if (resolvedTarget.type === 'wallet') {
       effectiveToken = currentInv.token;
       tokenCtxForSynthesis = effectiveToken ?? {
         address: resolvedTarget.address,
         symbol: resolvedTarget.label || truncateAddress(resolvedTarget.address),
         name: resolvedTarget.label || truncateAddress(resolvedTarget.address),
+        chain: resolvedTarget.chain as any,
+        resolvedAt: new Date().toISOString(),
+        decimals: 18,
+      };
+    } else {
+      effectiveToken = undefined;
+      tokenCtxForSynthesis = {
+        address: resolvedTarget.transactionHash,
+        symbol: truncateAddress(resolvedTarget.transactionHash),
+        name: 'Transaction',
         chain: resolvedTarget.chain as any,
         resolvedAt: new Date().toISOString(),
         decimals: 18,

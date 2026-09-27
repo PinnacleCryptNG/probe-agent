@@ -33,6 +33,12 @@ export type PendingClarification =
       address: string;
       selectedChain?: string;
       timestamp: string;
+    }
+  | {
+      type: 'transaction';
+      transactionHash: string;
+      selectedChain?: string;
+      timestamp: string;
     };
 
 export class InvestigationManager {
@@ -45,6 +51,7 @@ export class InvestigationManager {
     clarification:
       | { type: 'token'; symbol: string; selectedChain?: string }
       | { type: 'wallet'; address: string; selectedChain?: string }
+      | { type: 'transaction'; transactionHash: string; selectedChain?: string }
   ): void {
     this.pendingClarifications.set(String(chatId), {
       ...clarification,
@@ -103,6 +110,9 @@ export class InvestigationManager {
     } else if (target.type === 'wallet') {
       summary = `Investigation started for wallet ${target.address} on ${target.chain}`;
       details.walletAddress = target.address;
+    } else if (target.type === 'transaction') {
+      summary = `Investigation started for transaction ${target.transactionHash} on ${target.chain}`;
+      details.transactionHash = target.transactionHash;
     }
 
     const investigation: Investigation = {

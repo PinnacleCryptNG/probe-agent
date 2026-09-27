@@ -4,12 +4,18 @@ import { logger } from '../../utils/logger.js';
 import { EvidenceItem } from '../../types/evidence.js';
 import { EvidenceValidator, evidenceValidator as defaultValidator } from './validator.js';
 import {
+  ChainInvestigationResult,
   SynthesisInterpretation,
   SynthesisObservation,
   SynthesisRequest,
   SynthesisResult,
   SynthesisUnknown,
+  TokenInvestigationResult,
+  TransactionInvestigationResult,
+  TypedInvestigationResult,
+  WalletInvestigationResult,
 } from './types.js';
+import { ChainTarget, TokenTarget, TransactionTarget, WalletTarget } from '../target/types.js';
 import { profiler } from '../../utils/profiler.js';
 
 export interface SynthesisEngineDependencies {
@@ -29,8 +35,22 @@ const CAUSAL_PATTERNS = [
   /\bthe reason for the dump\b/i,
 ];
 
-export { formatFlowUsd, truncateAddress, deriveNextSuggestions } from './formatting.js';
-import { formatFlowUsd, truncateAddress, deriveNextSuggestions } from './formatting.js';
+export {
+  formatFlowUsd,
+  truncateAddress,
+  deriveNextSuggestions,
+  formatTypedResult,
+  formatWalletResult,
+  formatTokenResult,
+  formatTransactionResult,
+  formatChainResult,
+} from './formatting.js';
+import {
+  formatFlowUsd,
+  truncateAddress,
+  deriveNextSuggestions,
+  formatTypedResult,
+} from './formatting.js';
 
 /**
  * Derives clean, human-readable evidence categories from retrieved evidence items.
@@ -40,7 +60,19 @@ export function deriveEvidenceCategories(evidence: EvidenceItem[], symbol = 'ETH
 
   for (const item of evidence) {
     const cap = item.provenance?.capability;
-    if (cap === 'flow_intelligence') {
+    if (cap === 'wallet_current_balance') {
+      categories.add('Wallet balance');
+    } else if (cap === 'wallet_transactions') {
+      categories.add('Wallet transactions');
+    } else if (cap === 'wallet_first_funder') {
+      categories.add('First funder');
+    } else if (cap === 'wallet_counterparties') {
+      categories.add('Counterparties');
+    } else if (cap === 'wallet_related') {
+      categories.add('Related wallets');
+    } else if (cap === 'transaction_deep_dive') {
+      categories.add('Transaction record');
+    } else if (cap === 'flow_intelligence') {
       categories.add('Cohort net flows');
     } else if (cap === 'who_bought_sold') {
       categories.add('Top buyer/seller data');
@@ -595,6 +627,545 @@ export function extractDeterministicObservations(
   };
 }
 
+export function buildWalletInvestigationResult(
+  request: SynthesisRequest,
+  baseline: {
+    headline: string;
+    observations: SynthesisObservation[];
+    interpretation: string;
+    evidenceCategories: string[];
+    unknowns: SynthesisUnknown[];
+  }
+): WalletInvestigationResult {
+  const target = request.target as WalletTarget;
+  const address = target.address;
+  const chain = target.chain;
+
+  // 1. Balance evidence
+  const balanceEv = request.evidence.find(
+    (e) => e.provenance.capability === 'wallet_current_balance'
+  );
+  let nativeAsset: string | undefined;
+  let tokenPositions: string[] = [];
+  let portfolioValue: string | undefined;
+  let rawCount = 0;
+
+  if (balanceEv) {
+    const data = (balanceEv.normalizedData || balanceEv.rawPayload || {}) as any;
+    const tokens = Array.isArray(data.tokens)
+      ? data.tokens
+      : Array.isArray(data.items)
+      ? data.items
+      : Array.isArray(data.balances)
+      ? data.balances
+      : [];
+    rawCount = tokens.length;
+
+    const totalVal = data.total_value_usd ?? data.totalValueUsd ?? data.total_usd_value;
+    if (typeof totalVal === 'number') {
+      portfolioValue = `$${totalVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    } else if (rawCount === 0) {
+      portfolioValue = '$0.00';
+    }
+
+    const nativeVal =
+      data.native_balance ?? data.nativeBalance ?? data.eth_balance ?? data.native_token_balance;
+    if (nativeVal !== undefined) {
+      const nativeSym = chain.toLowerCase() === 'solana' ? 'SOL' : 'ETH';
+      nativeAsset = `${nativeSym}: ${nativeVal}`;
+    }
+
+    if (tokens.length > 0) {
+      tokenPositions = tokens.slice(0, 5).map((t: any) => {
+        const sym = t.symbol || t.token_symbol || 'Token';
+        const amt = t.amount ?? t.balance ?? '';
+        const usd = t.value_usd ?? t.usd_value;
+        const usdStr = usd !== undefined ? ` ($${Number(usd).toLocaleString()})` : '';
+        return `${sym}: ${amt}${usdStr}`;
+      });
+    }
+  }
+
+  // Epistemic rule for zero holdings
+  const findings: SynthesisObservation[] = [];
+  const notEstablished: string[] = [];
+
+  if (rawCount === 0) {
+    tokenPositions = ['Current wallet balance data returned no token positions.'];
+    portfolioValue = portfolioValue || '$0.00';
+    if (balanceEv) {
+      findings.push({
+        id: generateId('fnd'),
+        statement: 'Current wallet balance data returned no token positions.',
+        evidenceRefs: [balanceEv.evidenceId],
+      });
+    }
+    notEstablished.push(
+      'PROBE could not establish why this wallet currently has no token positions from the available evidence.'
+    );
+  }
+
+  // 2. Transactions
+  const txEv = request.evidence.find((e) => e.provenance.capability === 'wallet_transactions');
+  const recentActivity: string[] = [];
+  const largeMovements: string[] = [];
+
+  if (txEv) {
+    const data = (txEv.normalizedData || txEv.rawPayload || {}) as any;
+    const txs = Array.isArray(data.transactions)
+      ? data.transactions
+      : Array.isArray(data.items)
+      ? data.items
+      : [];
+    for (const tx of txs.slice(0, 4)) {
+      recentActivity.push(formatTransferItem(tx, 'ETH'));
+    }
+    const largeTxs = [...txs]
+      .filter((t: any) => Number(t.usdValue ?? t.amount_usd ?? t.amountUsd ?? 0) > 10000)
+      .slice(0, 3);
+    for (const ltx of largeTxs) {
+      largeMovements.push(formatTransferItem(ltx, 'ETH'));
+    }
+  }
+
+  // 3. First Funder
+  const funderEv = request.evidence.find((e) => e.provenance.capability === 'wallet_first_funder');
+  let firstFunder: string | undefined;
+  let firstFundingActivity: string | undefined;
+
+  if (funderEv) {
+    const data = (funderEv.normalizedData || funderEv.rawPayload || {}) as any;
+    const funder =
+      data.funder ||
+      data.first_funder ||
+      data.firstFunder ||
+      data.fromAddress ||
+      data.from_address;
+    const label =
+      data.funder_label || data.funderLabel || (funder ? truncateAddress(funder) : undefined);
+    if (label) {
+      firstFunder = label;
+      findings.push({
+        id: generateId('fnd'),
+        statement: `First funded by: ${label}`,
+        evidenceRefs: [funderEv.evidenceId],
+      });
+    }
+    const ts = data.timestamp || data.first_funding_time || data.block_timestamp;
+    if (ts) {
+      firstFundingActivity = `Initial funding transaction at ${ts}`;
+    }
+  }
+
+  // 4. Counterparties
+  const cpEv = request.evidence.find((e) => e.provenance.capability === 'wallet_counterparties');
+  const counterparties: string[] = [];
+  if (cpEv) {
+    const data = (cpEv.normalizedData || cpEv.rawPayload || {}) as any;
+    const cps = Array.isArray(data.counterparties)
+      ? data.counterparties
+      : Array.isArray(data.items)
+      ? data.items
+      : [];
+    for (const cp of cps.slice(0, 3)) {
+      const lbl = cp.label || cp.address_label || truncateAddress(cp.address || '');
+      const count = cp.interaction_count ?? cp.interactions ?? '';
+      counterparties.push(count ? `${lbl} (${count} interactions)` : lbl);
+    }
+  }
+
+  // 5. Related Wallets
+  const relEv = request.evidence.find((e) => e.provenance.capability === 'wallet_related');
+  const relatedWallets: string[] = [];
+  if (relEv) {
+    const data = (relEv.normalizedData || relEv.rawPayload || {}) as any;
+    const rels = Array.isArray(data.related_wallets)
+      ? data.related_wallets
+      : Array.isArray(data.items)
+      ? data.items
+      : [];
+    for (const r of rels.slice(0, 3)) {
+      const lbl = r.label || truncateAddress(r.address || '');
+      const score = r.score ?? r.relationship_score;
+      relatedWallets.push(score !== undefined ? `${lbl} (score: ${score})` : lbl);
+    }
+  }
+
+  // Add baseline observations if not already covered
+  for (const obs of baseline.observations) {
+    if (!findings.some((f) => f.statement === obs.statement)) {
+      findings.push(obs);
+    }
+  }
+
+  // Limitations
+  const limitations: string[] = [];
+  if (request.plan?.unresolvedRequirements && request.plan.unresolvedRequirements.length > 0) {
+    for (const unk of request.plan.unresolvedRequirements) {
+      limitations.push(unk);
+    }
+  }
+
+  const evidenceCategories = deriveEvidenceCategories(request.evidence, 'ETH');
+  const followUps = deriveNextSuggestions(request.question, address, target);
+
+  return {
+    targetType: 'wallet',
+    target,
+    balances: {
+      nativeAsset,
+      tokenPositions,
+      portfolioValue,
+      rawCount,
+    },
+    recentActivity,
+    largeMovements,
+    funding: {
+      firstFunder,
+      firstFundingActivity,
+    },
+    counterparties,
+    relatedWallets,
+    findings,
+    notEstablished,
+    evidence: evidenceCategories,
+    limitations,
+    confidence: 'high',
+    followUps,
+  };
+}
+
+export function buildTransactionInvestigationResult(
+  request: SynthesisRequest,
+  baseline: {
+    headline: string;
+    observations: SynthesisObservation[];
+    interpretation: string;
+    evidenceCategories: string[];
+    unknowns: SynthesisUnknown[];
+  }
+): TransactionInvestigationResult {
+  const target = request.target as TransactionTarget;
+  const hash = target.transactionHash;
+  const chain = target.chain;
+
+  const deepDiveEv = request.evidence.find(
+    (e) => e.provenance.capability === 'transaction_deep_dive'
+  );
+  const transferEv = request.evidence.find(
+    (e) => e.provenance.capability === 'token_transfers'
+  );
+
+  let status: string | undefined;
+  let when: string | undefined;
+  let from: string | undefined;
+  let to: string | undefined;
+  let assetValue: string | undefined;
+  let transactionType: string | undefined;
+  let movement: string | undefined;
+  const counterparties: string[] = [];
+  const notableDetails: string[] = [];
+  const findings: SynthesisObservation[] = [];
+  const notEstablished: string[] = [];
+  const limitations: string[] = [];
+
+  if (deepDiveEv) {
+    const data = (deepDiveEv.normalizedData || deepDiveEv.rawPayload || {}) as any;
+    status = data.status === 0 || data.success === false ? 'Failed' : 'Confirmed';
+    when = data.timestamp || data.block_timestamp;
+    from = data.from_label || data.fromLabel || (data.from ? truncateAddress(data.from) : undefined);
+    to = data.to_label || data.toLabel || (data.to ? truncateAddress(data.to) : undefined);
+    if (from && to) {
+      movement = `${from} → ${to}`;
+      counterparties.push(from, to);
+    }
+    if (data.value_usd !== undefined) {
+      assetValue = `$${Number(data.value_usd).toLocaleString()}`;
+    } else if (data.value !== undefined) {
+      assetValue = `${data.value} ETH`;
+    }
+    transactionType =
+      data.type ||
+      data.method_name ||
+      (data.input && data.input !== '0x' ? 'Contract Interaction' : 'Transfer');
+
+    findings.push({
+      id: generateId('fnd'),
+      statement: `Transaction ${status.toLowerCase()} on ${chain} at block timestamp ${when || 'unknown'}`,
+      evidenceRefs: [deepDiveEv.evidenceId],
+    });
+  } else if (transferEv) {
+    const data = (transferEv.normalizedData || transferEv.rawPayload || {}) as any;
+    const txs = Array.isArray(data.transfers) ? data.transfers : [];
+    const match = txs.find(
+      (t: any) =>
+        (t.transaction_hash || t.transactionHash || t.hash || '').toLowerCase() ===
+        hash.toLowerCase()
+    );
+    if (match) {
+      status = 'Confirmed';
+      when = match.timestamp || match.block_timestamp;
+      from = match.from_label || truncateAddress(match.from_address || match.from || '');
+      to = match.to_label || truncateAddress(match.to_address || match.to || '');
+      if (from && to) {
+        movement = `${from} → ${to}`;
+        counterparties.push(from, to);
+      } else if (from) {
+        counterparties.push(from);
+      } else if (to) {
+        counterparties.push(to);
+      }
+      const usd = match.amount_usd ?? match.amountUsd ?? match.transfer_value_usd;
+      assetValue = usd ? formatFlowUsd(Number(usd), false) : undefined;
+      transactionType = 'Transfer';
+      findings.push({
+        id: generateId('fnd'),
+        statement: `Transfer of ${assetValue || 'tokens'} from ${from} to ${to}`,
+        evidenceRefs: [transferEv.evidenceId],
+      });
+    }
+  }
+
+  if (request.plan?.unresolvedRequirements?.length) {
+    for (const unk of request.plan.unresolvedRequirements) {
+      limitations.push(unk);
+    }
+  }
+  if (!deepDiveEv && !transferEv) {
+    status = 'Capability Limitation';
+    limitations.push(
+      `Transaction deep-dive is currently supported on EVM chains. Querying transaction ${hash.slice(0, 10)}... on ${chain} is not supported by the current capability registry.`
+    );
+    notEstablished.push(
+      'Transaction status, counterparties, and transfer details cannot be verified without deep-dive capability support.'
+    );
+  }
+
+  const evidenceCategories = deriveEvidenceCategories(request.evidence, 'ETH');
+  const followUps = deriveNextSuggestions(request.question, hash, target);
+
+  return {
+    targetType: 'transaction',
+    target,
+    status,
+    when,
+    from,
+    to,
+    assetValue,
+    transactionType,
+    movement,
+    counterparties: Array.from(new Set(counterparties)),
+    notableDetails,
+    findings: findings.length > 0 ? findings : baseline.observations,
+    notEstablished,
+    evidence: evidenceCategories,
+    limitations,
+    confidence: deepDiveEv ? 'high' : 'low',
+    followUps,
+  };
+}
+
+export function buildChainInvestigationResult(
+  request: SynthesisRequest,
+  baseline: {
+    headline: string;
+    observations: SynthesisObservation[];
+    interpretation: string;
+    evidenceCategories: string[];
+    unknowns: SynthesisUnknown[];
+  }
+): ChainInvestigationResult {
+  const target = request.target as ChainTarget;
+  const chainName = target.chainDisplayName || target.chain;
+
+  const infoEv = request.evidence.find((e) => e.provenance.capability === 'token_information');
+  const flowEv = request.evidence.find((e) => e.provenance.capability === 'flow_intelligence');
+  const transferEv = request.evidence.find((e) => e.provenance.capability === 'token_transfers');
+
+  const nativeAsset: string | undefined = request.tokenContext.symbol;
+  let currentActivity: string | undefined;
+  const largeTransactions: string[] = [];
+  const whaleSmartMoneyActivity: string[] = [];
+  let nativeAssetActivity: string | undefined;
+  const notableMovements: string[] = [];
+  const findings: SynthesisObservation[] = [...baseline.observations];
+  const notEstablished: string[] = [];
+  const limitations: string[] = [];
+
+  if (flowEv) {
+    const data = flowEv.normalizedData as any;
+    const freshNet = data.freshWalletsNetUsd ?? data.fresh_wallets?.net_flow_usd;
+    const smNet = data.smartMoneyNetUsd ?? data.smartMoney?.net_flow_usd;
+    const whaleNet = data.whalesNetUsd ?? data.whales?.net_flow_usd;
+    const exNet = data.exchangesNetUsd ?? data.exchanges?.net_flow_usd;
+
+    if (freshNet !== undefined || exNet !== undefined) {
+      currentActivity = `Network flow: Fresh wallets net flow ${formatFlowUsd(Number(freshNet || 0))}, Exchanges net flow ${formatFlowUsd(Number(exNet || 0))}.`;
+    }
+    if (whaleNet !== undefined) {
+      whaleSmartMoneyActivity.push(`Whale wallets: ${formatFlowUsd(Number(whaleNet))} net flow`);
+    }
+    if (smNet !== undefined) {
+      whaleSmartMoneyActivity.push(`Smart Money / Top PnL: ${formatFlowUsd(Number(smNet))} net flow`);
+    }
+  }
+
+  if (transferEv) {
+    const data = (transferEv.normalizedData || transferEv.rawPayload || {}) as any;
+    const txs = Array.isArray(data.transfers) ? data.transfers : [];
+    for (const tx of txs.slice(0, 3)) {
+      largeTransactions.push(formatTransferItem(tx, nativeAsset || 'ETH'));
+    }
+  }
+
+  if (infoEv) {
+    const data = infoEv.normalizedData as any;
+    const price = data.priceUsd;
+    if (price) {
+      nativeAssetActivity = `${nativeAsset} spot price is currently $${Number(price).toLocaleString()}`;
+    }
+  }
+
+  if (request.plan?.unresolvedRequirements?.length) {
+    for (const unk of request.plan.unresolvedRequirements) {
+      limitations.push(unk);
+    }
+  }
+
+  const evidenceCategories = deriveEvidenceCategories(request.evidence, nativeAsset || 'ETH');
+  const followUps = deriveNextSuggestions(request.question, chainName, target);
+
+  return {
+    targetType: 'chain',
+    target,
+    overview: {
+      chain: chainName,
+      nativeAsset,
+    },
+    currentActivity,
+    largeTransactions,
+    whaleSmartMoneyActivity,
+    nativeAssetActivity,
+    notableMovements,
+    findings,
+    notEstablished,
+    evidence: evidenceCategories,
+    limitations,
+    confidence: 'high',
+    followUps,
+  };
+}
+
+export function buildTokenInvestigationResult(
+  request: SynthesisRequest,
+  baseline: {
+    headline: string;
+    observations: SynthesisObservation[];
+    interpretation: string;
+    evidenceCategories: string[];
+    unknowns: SynthesisUnknown[];
+  },
+  headline: string,
+  observations: SynthesisObservation[],
+  interpretationText: string
+): TokenInvestigationResult {
+  const target = (request.target as TokenTarget) || {
+    type: 'token',
+    token: request.tokenContext,
+    chainDisplayName:
+      request.tokenContext.chain.charAt(0).toUpperCase() + request.tokenContext.chain.slice(1),
+  };
+
+  const symbol = target.token.symbol;
+  const chainName =
+    target.chainDisplayName ||
+    (target.token.chain.charAt(0).toUpperCase() + target.token.chain.slice(1));
+
+  const infoEv = request.evidence.find((e) => e.provenance.capability === 'token_information');
+  const flowEv = request.evidence.find((e) => e.provenance.capability === 'flow_intelligence');
+  const tradeEv = request.evidence.find((e) => e.provenance.capability === 'who_bought_sold');
+  const transferEv = request.evidence.find((e) => e.provenance.capability === 'token_transfers');
+  const dexEv = request.evidence.find((e) => e.provenance.capability === 'dex_trades');
+
+  let marketContext: string | undefined = headline;
+  if (infoEv) {
+    const data = infoEv.normalizedData as any;
+    if (data?.price_usd !== undefined) {
+      marketContext = `${target.token.symbol} spot price: $${Number(data.price_usd).toLocaleString()}`;
+    }
+  }
+
+  let inflowsOutflows: string | undefined = interpretationText;
+  let buyersSellers: string | undefined;
+  let smartMoney: string | undefined;
+  let transfers: string | undefined;
+  let dexTrades: string | undefined;
+
+  if (flowEv) {
+    const data = flowEv.normalizedData as any;
+    const smNet = data.smartMoneyNetUsd ?? data.smartMoney?.net_flow_usd;
+    if (smNet !== undefined) {
+      smartMoney = `Smart Money: ${formatFlowUsd(Number(smNet))} net flow`;
+    }
+  }
+
+  if (tradeEv) {
+    const data = tradeEv.normalizedData as any;
+    const buyers = Array.isArray(data.buyers) ? data.buyers : [];
+    if (buyers.length > 0) {
+      const top = buyers[0];
+      const addr = top.address_label || top.label || truncateAddress(top.address || '');
+      buyersSellers = `Top buyer: ${addr}`;
+    }
+  }
+
+  const notableActivity: string[] = [];
+  if (transferEv) {
+    const data = (transferEv.normalizedData || transferEv.rawPayload || {}) as any;
+    const txs = Array.isArray(data.transfers) ? data.transfers : [];
+    if (txs.length > 0) {
+      transfers = `${txs.length} large transfers tracked`;
+      notableActivity.push(formatTransferItem(txs[0], symbol));
+    }
+  }
+
+  if (dexEv) {
+    const data = (dexEv.normalizedData || dexEv.rawPayload || {}) as any;
+    const trades = Array.isArray(data.trades) ? data.trades : [];
+    if (trades.length > 0) {
+      dexTrades = `${trades.length} DEX trades recorded`;
+    }
+  }
+
+  const limitations: string[] = baseline.unknowns.map((u) => u.statement);
+  const evidenceCategories = deriveEvidenceCategories(request.evidence, symbol);
+  const followUps = deriveNextSuggestions(request.question, symbol, target);
+
+  return {
+    targetType: 'token',
+    target,
+    overview: {
+      token: `${target.token.name} (${symbol})`,
+      chain: chainName,
+      contract: target.token.address,
+      marketContext,
+    },
+    flowActivity: {
+      inflowsOutflows,
+      buyersSellers,
+      smartMoney,
+      transfers,
+      dexTrades,
+    },
+    notableActivity,
+    findings: observations,
+    evidence: evidenceCategories,
+    limitations,
+    confidence: 'high',
+    followUps,
+  };
+}
+
 export class EvidenceSynthesisEngine {
   private readonly llmProvider: ILLMProvider;
   private readonly validator: EvidenceValidator;
@@ -762,40 +1333,58 @@ export class EvidenceSynthesisEngine {
     // 7. Optional next question invitation (single line, no questionnaire)
     const followUpQuestions = [`Ask another question about ${symbol}.`];
 
-    // 8. Compose formatted answer markdown matching the concise target output structure
-    const formattedAnswer = this.composeAnswer({
-      symbol,
-      question: request.question,
-      headline,
-      observations,
-      interpretation: interpretationText,
-      evidenceCategories,
-      unknowns,
-    });
+    // 8. Build typed investigation result
+    let typedResult: TypedInvestigationResult;
+    if (request.target?.type === 'wallet') {
+      typedResult = buildWalletInvestigationResult(request, baseline);
+    } else if (request.target?.type === 'transaction') {
+      typedResult = buildTransactionInvestigationResult(request, baseline);
+    } else if (request.target?.type === 'chain') {
+      typedResult = buildChainInvestigationResult(request, baseline);
+    } else {
+      typedResult = buildTokenInvestigationResult(
+        request,
+        baseline,
+        headline,
+        observations,
+        interpretationText
+      );
+    }
+
+    // 9. Compose formatted answer markdown from typed result
+    const formattedAnswer = formatTypedResult(typedResult, request.question);
 
     const candidateResult: SynthesisResult = {
       success: true,
       answer: formattedAnswer,
       headline,
-      observations,
+      typedResult,
+      observations:
+        typedResult.findings && typedResult.findings.length > 0
+          ? typedResult.findings
+          : observations,
       interpretations,
       hypotheses,
       unknowns,
       evidenceRefs,
-      evidenceCategories,
+      evidenceCategories: typedResult.evidence ?? evidenceCategories,
       followUpQuestions,
       validated: false,
       investigationId: request.investigationId,
       createdAt,
     };
 
-    // 9. Run EvidenceValidator
+    // 10. Run EvidenceValidator
+    const targetAddress =
+      request.target?.type === 'wallet'
+        ? request.target.address
+        : request.tokenContext.address;
     const tValStart = Date.now();
     const validation = this.validator.validate(
       candidateResult,
       request.evidence,
       request.investigationId,
-      request.tokenContext.address
+      targetAddress
     );
     const tValEnd = Date.now();
     profiler.recordStage('7. Evidence validation', tValStart, tValEnd, {

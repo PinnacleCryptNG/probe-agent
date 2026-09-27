@@ -1,6 +1,57 @@
 import { deriveEvidenceCategories, deriveNextSuggestions } from '../../core/synthesis/synthesizer.js';
 import { InvestigationTurnResult } from '../../core/investigation/types.js';
 import { formatChallengeResult } from '../../core/challenge/formatter.js';
+import {
+  formatTypedResult,
+  truncateAddress,
+  formatWalletResult,
+  formatTokenResult,
+  formatTransactionResult,
+  formatChainResult,
+} from '../../core/synthesis/formatting.js';
+import { InvestigationTarget } from '../../core/target/types.js';
+
+export {
+  formatTypedResult,
+  formatWalletResult,
+  formatTokenResult,
+  formatTransactionResult,
+  formatChainResult,
+};
+
+/**
+ * Returns the Line 1 & Line 2 investigation header identifying the investigation type.
+ */
+export function getInvestigationHeader(target?: InvestigationTarget, fallbackSymbol = 'ETH'): string {
+  if (target?.type === 'wallet') {
+    const addr = target.label || truncateAddress(target.address);
+    const chain =
+      target.chainDisplayName ||
+      (target.chain ? target.chain.charAt(0).toUpperCase() + target.chain.slice(1) : 'Ethereum');
+    return `🔎 WALLET INVESTIGATION\n${addr} · ${chain}`;
+  }
+  if (target?.type === 'transaction') {
+    const hash =
+      target.transactionHash.length > 14
+        ? `${target.transactionHash.slice(0, 8)}...${target.transactionHash.slice(-6)}`
+        : target.transactionHash;
+    const chain = target.chain
+      ? target.chain.charAt(0).toUpperCase() + target.chain.slice(1)
+      : 'Ethereum';
+    return `🔎 TRANSACTION INVESTIGATION\n${hash} · ${chain}`;
+  }
+  if (target?.type === 'chain') {
+    const chain = target.chainDisplayName || target.chain;
+    return `🔎 CHAIN INVESTIGATION\n${chain}`;
+  }
+  const sym = target?.type === 'token' ? target.token.symbol : fallbackSymbol;
+  const chain =
+    target?.type === 'token'
+      ? target.chainDisplayName ||
+        (target.token.chain.charAt(0).toUpperCase() + target.token.chain.slice(1))
+      : 'Ethereum';
+  return `🔎 TOKEN INVESTIGATION\n${sym} · ${chain}`;
+}
 
 /**
  * Renders a structured InvestigationTurnResult into a human-readable Telegram response.
@@ -52,7 +103,7 @@ export function formatInvestigationResult(result: InvestigationTurnResult): stri
     result.target?.type === 'token'
       ? result.target.token.symbol
       : result.target?.type === 'wallet'
-      ? result.target.label || `${result.target.address.slice(0, 6)}...${result.target.address.slice(-4)}`
+      ? result.target.label || truncateAddress(result.target.address)
       : result.target?.type === 'chain'
       ? result.target.chainDisplayName
       : result.plan?.tokenContext?.symbol ?? result.token?.symbol ?? 'ETH';
@@ -77,6 +128,8 @@ export function formatInvestigationResult(result: InvestigationTurnResult): stri
       ? `No large transactions were detected for ${symbol} over this period in Nansen's indexed data.`
       : `No matching records were found for ${symbol} over this period in Nansen's indexed data.`;
     return [
+      getInvestigationHeader(result.target, symbol),
+      '',
       `🔎 ${symbol} — ${result.question}`,
       '',
       msg,
@@ -88,6 +141,10 @@ export function formatInvestigationResult(result: InvestigationTurnResult): stri
   // 3. Insufficient evidence state
   if (result.status === 'insufficient_evidence') {
     const lines = [
+      getInvestigationHeader(result.target, symbol),
+      '',
+      `🔎 ${symbol} — ${result.question}`,
+      '',
       "I couldn't establish a reliable explanation from the available on-chain data.",
     ];
 
@@ -107,9 +164,18 @@ export function formatInvestigationResult(result: InvestigationTurnResult): stri
   }
 
   // 4. Completed or budget_limited states
+  // If synthesis produced a typedResult, format with dedicated typed formatter
+  if (result.synthesis?.typedResult) {
+    return formatTypedResult(
+      result.synthesis.typedResult,
+      result.question,
+      result.status === 'budget_limited'
+    );
+  }
+
   const synthesis = result.synthesis;
   if (!synthesis) {
-    return `🔎 ${symbol} — ${result.question}\n\nNo synthesis output available.\n\nAsk another question about ${symbol}.`;
+    return `${getInvestigationHeader(result.target, symbol)}\n\n🔎 ${symbol} — ${result.question}\n\nNo synthesis output available.\n\nAsk another question about ${symbol}.`;
   }
 
   const lines: string[] = [];
@@ -121,6 +187,8 @@ export function formatInvestigationResult(result: InvestigationTurnResult): stri
     lines.push('');
   }
 
+  lines.push(getInvestigationHeader(result.target, symbol));
+  lines.push('');
   lines.push(`🔎 ${symbol} — ${result.question}`);
 
   // 1. HEADLINE / DIRECT ANSWER FIRST
