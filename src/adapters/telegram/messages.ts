@@ -53,9 +53,10 @@ export const TelegramMessages = {
   },
 
   walletSelected(address: string, chainDisplayName?: string): string {
-    const shortAddr = `${address.slice(0, 6)}...${address.slice(-4)}`;
-    const header = chainDisplayName ? `🔎 ${shortAddr} · ${chainDisplayName}` : `🔎 ${shortAddr}`;
+    const shortAddr = `${address.toLowerCase().slice(0, 6)}...${address.toLowerCase().slice(-4)}`;
+    const header = chainDisplayName ? `${shortAddr} · ${chainDisplayName}` : shortAddr;
     return [
+      '🔎 WALLET INVESTIGATION',
       header,
       '',
       'What would you like to investigate about this wallet?',
@@ -65,8 +66,8 @@ export const TelegramMessages = {
   },
 
   contractSelected(address: string, chainDisplayName?: string): string {
-    const shortAddr = `${address.slice(0, 6)}...${address.slice(-4)}`;
-    const header = chainDisplayName ? `🔎 ${shortAddr} · ${chainDisplayName}` : `🔎 ${shortAddr}`;
+    const shortAddr = `${address.toLowerCase().slice(0, 6)}...${address.toLowerCase().slice(-4)}`;
+    const header = chainDisplayName ? `${shortAddr} · ${chainDisplayName}` : shortAddr;
     return [
       '🔎 CONTRACT ADDRESS',
       header,
@@ -76,13 +77,27 @@ export const TelegramMessages = {
   },
 
   ambiguousAddress(address: string, chains: string[]): string {
-    const shortAddr = `${address.slice(0, 6)}...${address.slice(-4)}`;
+    const shortAddr = `${address.toLowerCase().slice(0, 6)}...${address.toLowerCase().slice(-4)}`;
     return [
       '🔎 Address detected',
       '',
       shortAddr,
       '',
       'I need to determine whether this address is a wallet or contract before investigating it.',
+      '',
+      'Which chain?',
+      ...chains.map((c) => `• ${c}`),
+    ].join('\n');
+  },
+
+  invalidChainForAddress(address: string, invalidChain: string, chains: string[]): string {
+    const shortAddr = `${address.toLowerCase().slice(0, 6)}...${address.toLowerCase().slice(-4)}`;
+    return [
+      '🔎 Address detected',
+      '',
+      shortAddr,
+      '',
+      `I don't recognize "${invalidChain}" as a supported chain.`,
       '',
       'Which chain?',
       ...chains.map((c) => `• ${c}`),

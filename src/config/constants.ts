@@ -19,6 +19,14 @@ export const PROBE_CONSTANTS = {
 
   // Chain configurations
   PRIMARY_CHAINS: ['ethereum', 'base', 'solana'] as const,
+  CLARIFICATION_EVM_CHAINS: [
+    'ethereum',
+    'base',
+    'bnb',
+    'arbitrum',
+    'polygon',
+    'optimism',
+  ] as const,
   SUPPORTED_EVM_CHAINS: [
     'arbitrum', 'arc', 'avalanche', 'base', 'bitlayer', 'bnb', 'chiliz', 'citrea',
     'ethereum', 'gravity', 'hyperevm', 'iotaevm', 'katana', 'linea', 'mantle',

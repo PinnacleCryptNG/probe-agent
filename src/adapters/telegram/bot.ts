@@ -179,13 +179,17 @@ export class ProbeTelegramBot {
       if (resolution.status === 'AMBIGUOUS') {
         if (resolution.candidateIdentifier) {
           if (
+            resolution.candidateType === 'address' ||
             resolution.candidateType === 'wallet' ||
+            resolution.candidateType === 'contract' ||
             /^0x[a-fA-F0-9]{40}$/i.test(resolution.candidateIdentifier) ||
             isSolanaAddress(resolution.candidateIdentifier)
           ) {
             this.investigationManager.setPendingClarification(chatId, {
-              type: 'wallet',
+              type: 'address_chain_clarification',
               address: resolution.candidateIdentifier,
+              candidateType: (resolution.candidateType as any) ?? 'address',
+              awaiting: 'chain',
             });
           } else {
             this.investigationManager.setPendingClarification(chatId, {
@@ -246,7 +250,11 @@ export class ProbeTelegramBot {
 
       // 3. Check if input was intended strictly as a token selection (standalone)
       const tokenCandidate = extractTokenCandidate(trimmed);
-      const isStandaloneToken = target.type === 'token' && isOnlyTokenInput(trimmed, tokenCandidate);
+      const isStandaloneToken =
+        target.type === 'token' &&
+        !isQuestion &&
+        (isOnlyTokenInput(trimmed, tokenCandidate) ||
+          normalizeChain(trimmed) !== undefined);
 
       if (isStandaloneToken && target.type === 'token') {
         this.investigationManager.clearPendingClarification(chatId);
@@ -274,6 +282,7 @@ export class ProbeTelegramBot {
         !isQuestion &&
         (trimmed.toLowerCase() === target.address.toLowerCase() ||
           normalizeChain(trimmed) !== undefined ||
+          resolution.source === 'explicit_message_with_chain' ||
           /^0x[a-fA-F0-9]{40}$/i.test(trimmed) ||
           isSolanaAddress(trimmed));
 
@@ -291,7 +300,13 @@ export class ProbeTelegramBot {
       }
 
       // 3c. Check if input was intended strictly as a contract selection (standalone or user correction)
-      if (target.type === 'contract' && (!isQuestion || resolution.source === 'user_correction')) {
+      if (
+        target.type === 'contract' &&
+        (!isQuestion ||
+          resolution.source === 'user_correction' ||
+          resolution.source === 'explicit_message_with_chain' ||
+          normalizeChain(trimmed) !== undefined)
+      ) {
         this.investigationManager.clearPendingClarification(chatId);
         this.investigationManager.clearActiveInvestigation(chatId);
         this.investigationManager.createInvestigation({

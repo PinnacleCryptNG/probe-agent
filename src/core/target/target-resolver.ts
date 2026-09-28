@@ -1,12 +1,18 @@
 import {
   ITargetResolver,
   InvestigationTarget,
+  PendingResolutionContext,
   TargetResolutionResult,
   TargetResolverOptions,
   WalletTarget,
 } from './types.js';
 import { ITokenResolver, defaultTokenResolver } from '../token/resolver.js';
-import { extractExplicitChain, getChainDisplayName, normalizeChain } from './chain-resolver.js';
+import {
+  extractExplicitChain,
+  getChainDisplayName,
+  normalizeChain,
+  getClarificationEvmChainNames,
+} from './chain-resolver.js';
 import { isSolanaAddress, detectChainOnlyInput } from '../token/detector.js';
 import { TokenCandidate, TokenResolutionResult } from '../token/types.js';
 import { TokenContext } from '../../types/domain.js';
@@ -116,14 +122,54 @@ export function detectUserCorrection(text: string): UserCorrectionDetection {
   return { isCorrection: false };
 }
 
+/**
+ * Detects whether the input is an explicit instruction targeting a new entity,
+ * rather than a chain name intended to answer an address clarification prompt.
+ *
+ * Explicit new targets include:
+ * 1. Cashtag/dollar ticker (e.g. "$PEPE", "$BTC", "$SOL")
+ * 2. Explicit token or contract keyword command (e.g. "token 0x...", "contract 0x...", "token PEPE")
+ * 3. Explicit transaction hash (66 chars, 0x + 64 hex)
+ * 4. Solana address (base58)
+ * 5. A different EVM address than the pending address
+ */
+export function isExplicitNewTarget(question: string, pendingAddress?: string): boolean {
+  const trimmed = question.trim();
+
+  // 1. Cashtag/dollar ticker (e.g. "$PEPE", "$BTC", "$SOL")
+  if (/^\$[a-zA-Z0-9]{2,15}$/.test(trimmed)) {
+    return true;
+  }
+
+  // 2. Explicit token or contract keyword command (e.g. "token 0x...", "contract 0x...", "token PEPE")
+  if (/^(?:token|contract)\s+[a-zA-Z0-9$]+/i.test(trimmed)) {
+    return true;
+  }
+
+  // 3. Explicit transaction hash
+  if (/\b0x[a-fA-F0-9]{64}\b/i.test(trimmed)) {
+    return true;
+  }
+
+  // 4. Solana address
+  if (isSolanaAddress(trimmed)) {
+    return true;
+  }
+
+  // 5. A different EVM address than the pending address
+  const evmMatch = trimmed.match(/\b0x[a-fA-F0-9]{40}\b/i);
+  if (evmMatch && pendingAddress && evmMatch[0].toLowerCase() !== pendingAddress.toLowerCase()) {
+    return true;
+  }
+
+  return false;
+}
+
 export class TargetResolver implements ITargetResolver {
   private readonly tokenResolver: ITokenResolver;
   private pendingByChatId = new Map<
     string,
-    | { type: 'token'; symbol: string; selectedChain?: string; timestamp: number }
-    | { type: 'wallet'; address: string; selectedChain?: string; timestamp: number }
-    | { type: 'contract'; address: string; selectedChain?: string; timestamp: number }
-    | { type: 'transaction'; transactionHash: string; selectedChain?: string; timestamp: number }
+    PendingResolutionContext & { timestamp: number }
   >();
 
   constructor(deps?: ITokenResolver | { tokenResolver?: ITokenResolver }) {
@@ -136,11 +182,7 @@ export class TargetResolver implements ITargetResolver {
 
   public setPendingResolution(
     chatId: number | string,
-    pending:
-      | { type: 'token'; symbol: string; selectedChain?: string }
-      | { type: 'wallet'; address: string; selectedChain?: string }
-      | { type: 'contract'; address: string; selectedChain?: string }
-      | { type: 'transaction'; transactionHash: string; selectedChain?: string }
+    pending: PendingResolutionContext
   ): void {
     this.pendingByChatId.set(String(chatId), {
       ...pending,
@@ -150,12 +192,7 @@ export class TargetResolver implements ITargetResolver {
 
   public getPendingResolution(
     chatId: number | string
-  ):
-    | { type: 'token'; symbol: string; selectedChain?: string; timestamp: number }
-    | { type: 'wallet'; address: string; selectedChain?: string; timestamp: number }
-    | { type: 'contract'; address: string; selectedChain?: string; timestamp: number }
-    | { type: 'transaction'; transactionHash: string; selectedChain?: string; timestamp: number }
-    | undefined {
+  ): (PendingResolutionContext & { timestamp: number }) | undefined {
     return this.pendingByChatId.get(String(chatId));
   }
 
@@ -249,7 +286,7 @@ export class TargetResolver implements ITargetResolver {
         (options.existingTarget?.type === 'wallet' ? options.existingTarget.address : undefined) ||
         (options.existingTarget?.type === 'contract' ? options.existingTarget.address : undefined) ||
         (options.existingTarget?.type === 'token' ? options.existingTarget.token.address : undefined) ||
-        (pendingContext && (pendingContext.type === 'wallet' || pendingContext.type === 'contract') ? pendingContext.address : undefined);
+        (pendingContext && (pendingContext.type === 'wallet' || pendingContext.type === 'contract' || pendingContext.type === 'address_chain_clarification') ? (pendingContext as any).address : undefined);
 
       const targetChainForCorrection =
         explicitChainInfo?.chain ||
@@ -348,22 +385,68 @@ export class TargetResolver implements ITargetResolver {
     }
 
     // Step 0A: Check if answering a pending wallet/address clarification with a chain
-    if (pendingContext && (pendingContext.type === 'wallet' || pendingContext.type === 'contract')) {
-      if (resolvedChainFromInput) {
+    const isAddressPending =
+      pendingContext &&
+      (pendingContext.type === 'address_chain_clarification' ||
+        pendingContext.type === 'wallet' ||
+        pendingContext.type === 'contract');
+    const pendingAddress = isAddressPending ? (pendingContext as any).address : undefined;
+
+    if (isAddressPending && pendingAddress) {
+      if (isExplicitNewTarget(question, pendingAddress)) {
+        logger.info('Explicit new target provided while address clarification was pending; replacing pending address', {
+          newTargetInput: question,
+          previousPendingAddress: pendingAddress,
+        });
+        if (chatIdKey) {
+          this.clearPendingResolution(chatIdKey);
+        }
+        // Fall through to resolve the new target cleanly
+      } else if (resolvedChainFromInput) {
         if (chatIdKey) {
           this.clearPendingResolution(chatIdKey);
         }
 
-        if (pendingContext.type === 'contract') {
+        // Deterministically classify the address on this chain (address + chain -> token info / address resolution)
+        const candidate: TokenCandidate = {
+          identifier: pendingAddress,
+          type: 'address',
+          detectedChain: resolvedChainFromInput,
+        };
+        const res = await this.resolveCandidate(candidate);
+
+        if (res.status === 'RESOLVED' && res.token) {
+          logger.info('Address resolved to verified token contract', {
+            address: pendingAddress,
+            token: res.token.symbol,
+            chain: res.token.chain,
+          });
+          return {
+            status: 'RESOLVED',
+            target: {
+              type: 'token',
+              token: res.token,
+              chain: res.token.chain,
+              rawIdentifier: pendingAddress,
+              explicitChain: resolvedChainFromInput,
+            },
+            source: 'explicit_message_with_chain',
+          };
+        }
+
+        if (
+          pendingContext.type === 'contract' ||
+          (pendingContext as any).candidateType === 'contract'
+        ) {
           const contractTarget: InvestigationTarget = {
             type: 'contract',
-            address: pendingContext.address,
+            address: pendingAddress.toLowerCase(),
             chain: resolvedChainFromInput,
-            rawIdentifier: pendingContext.address,
+            rawIdentifier: pendingAddress,
             explicitChain: resolvedChainFromInput,
           };
           logger.info('Contract target resolved via pending clarification', {
-            address: pendingContext.address,
+            address: pendingAddress,
             chain: resolvedChainFromInput,
           });
           return {
@@ -375,19 +458,44 @@ export class TargetResolver implements ITargetResolver {
 
         const walletTarget: InvestigationTarget = {
           type: 'wallet',
-          address: pendingContext.address,
+          address: pendingAddress.toLowerCase(),
           chain: resolvedChainFromInput,
-          rawIdentifier: pendingContext.address,
+          rawIdentifier: pendingAddress,
           explicitChain: resolvedChainFromInput,
         };
         logger.info('Wallet target resolved via pending clarification', {
-          address: pendingContext.address,
+          address: pendingAddress,
           chain: resolvedChainFromInput,
         });
         return {
           status: 'RESOLVED',
           target: walletTarget,
           source: 'explicit_message_with_chain',
+        };
+      } else {
+        // Unrecognized chain provided while awaiting chain clarification for address
+        // The pending address MUST survive invalid clarification input
+        if (chatIdKey) {
+          this.setPendingResolution(chatIdKey, {
+            type: 'address_chain_clarification',
+            address: pendingAddress,
+            candidateType: (pendingContext as any).candidateType ?? 'address',
+            awaiting: 'chain',
+          });
+        }
+
+        const chains = getClarificationEvmChainNames();
+        logger.info('Unrecognized chain for pending address clarification; re-prompting user', {
+          address: pendingAddress,
+          invalidChain: question,
+        });
+        return {
+          status: 'AMBIGUOUS',
+          candidateIdentifier: pendingAddress,
+          candidateType: 'wallet',
+          availableChains: chains,
+          clarificationMessage: TelegramMessages.invalidChainForAddress(pendingAddress, question, chains),
+          source: 'explicit_message',
         };
       }
     }
@@ -511,11 +619,13 @@ export class TargetResolver implements ITargetResolver {
       // Chain cannot be determined from address alone: prompt user while preserving candidate
       if (chatIdKey) {
         this.setPendingResolution(chatIdKey, {
-          type: 'wallet',
+          type: 'address_chain_clarification',
           address: walletMatch.address,
+          candidateType: 'address',
+          awaiting: 'chain',
         });
       }
-      const chains = ['Ethereum', 'Base', 'BNB', 'Arbitrum', 'Polygon', 'Optimism'];
+      const chains = getClarificationEvmChainNames();
       logger.info('Address candidate detected without chain; requesting clarification', { address: walletMatch.address });
       return {
         status: 'AMBIGUOUS',

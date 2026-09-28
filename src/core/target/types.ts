@@ -48,7 +48,7 @@ export interface UnresolvedTargetResult {
   source: TargetResolutionSource;
   availableChains?: string[];
   candidateIdentifier?: string;
-  candidateType?: 'token' | 'wallet' | 'transaction' | 'chain' | 'contract';
+  candidateType?: 'token' | 'wallet' | 'transaction' | 'chain' | 'contract' | 'address';
   clarificationMessage?: string;
 }
 
@@ -73,6 +73,13 @@ export type PendingResolutionContext =
   | {
       type: 'contract';
       address: string;
+      selectedChain?: string;
+    }
+  | {
+      type: 'address_chain_clarification';
+      address: string;
+      candidateType?: 'address' | 'wallet' | 'contract';
+      awaiting?: 'chain';
       selectedChain?: string;
     };
 

@@ -39,6 +39,20 @@ export type PendingClarification =
       transactionHash: string;
       selectedChain?: string;
       timestamp: string;
+    }
+  | {
+      type: 'contract';
+      address: string;
+      selectedChain?: string;
+      timestamp: string;
+    }
+  | {
+      type: 'address_chain_clarification';
+      address: string;
+      candidateType: 'address' | 'wallet' | 'contract';
+      awaiting: 'chain';
+      selectedChain?: string;
+      timestamp: string;
     };
 
 export class InvestigationManager {
@@ -52,11 +66,23 @@ export class InvestigationManager {
       | { type: 'token'; symbol: string; selectedChain?: string }
       | { type: 'wallet'; address: string; selectedChain?: string }
       | { type: 'transaction'; transactionHash: string; selectedChain?: string }
+      | { type: 'contract'; address: string; selectedChain?: string }
+      | {
+          type: 'address_chain_clarification';
+          address: string;
+          candidateType?: 'address' | 'wallet' | 'contract';
+          awaiting?: 'chain';
+          selectedChain?: string;
+        }
   ): void {
+    const candidateType = (clarification as any).candidateType ?? 'address';
+    const awaiting = (clarification as any).awaiting ?? 'chain';
     this.pendingClarifications.set(String(chatId), {
       ...clarification,
+      candidateType,
+      awaiting,
       timestamp: new Date().toISOString(),
-    });
+    } as PendingClarification);
   }
 
   public getPendingClarification(chatId: number | string): PendingClarification | undefined {

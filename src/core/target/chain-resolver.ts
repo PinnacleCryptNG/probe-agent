@@ -14,7 +14,7 @@ const CHAIN_DEFINITIONS: ChainDefinition[] = [
   { canonical: 'polygon', displayName: 'Polygon', aliases: ['polygon pos'] },
   { canonical: 'optimism', displayName: 'Optimism', aliases: ['optimistic ethereum', 'optimism mainnet'] },
   { canonical: 'avalanche', displayName: 'Avalanche', aliases: ['avalanche c-chain', 'c-chain'] },
-  { canonical: 'bsc', displayName: 'BSC', aliases: ['binance', 'binance smart chain', 'bnb chain'] },
+  { canonical: 'bnb', displayName: 'BNB', aliases: ['binance', 'binance smart chain', 'bnb chain', 'bsc'] },
   { canonical: 'fantom', displayName: 'Fantom', aliases: ['fantom opera'] },
   { canonical: 'blast', displayName: 'Blast', aliases: [] },
   { canonical: 'linea', displayName: 'Linea', aliases: [] },
@@ -80,6 +80,14 @@ export function getChainDisplayName(chain: string): string {
   const norm = normalizeChain(chain);
   if (!norm) return chain.charAt(0).toUpperCase() + chain.slice(1);
   return DISPLAY_NAME_MAP.get(norm) ?? (chain.charAt(0).toUpperCase() + chain.slice(1));
+}
+
+/**
+ * Returns the list of display names for standard clarification EVM chains.
+ * Authoritative registry: PROBE_CONSTANTS.CLARIFICATION_EVM_CHAINS.
+ */
+export function getClarificationEvmChainNames(): string[] {
+  return PROBE_CONSTANTS.CLARIFICATION_EVM_CHAINS.map(getChainDisplayName);
 }
 
 /**
