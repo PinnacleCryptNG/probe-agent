@@ -23,6 +23,12 @@ import {
   getNativeAssetForChain,
   isNativeAssetTicker,
 } from './native-assets.js';
+import {
+  AddressClassifier,
+  AddressType,
+  defaultAddressClassifier,
+} from './address-classifier.js';
+import { SupportedChain } from '../capabilities/chain-support.js';
 
 const EXCLUDED_WORDS = new Set([
   'IS', 'IT', 'AT', 'ON', 'IN', 'TO', 'SO', 'NO', 'MY', 'UP', 'DO', 'IF', 'ME', 'WE', 'US', 'OR', 'BY', 'AN', 'AS', 'HE',
@@ -165,19 +171,34 @@ export function isExplicitNewTarget(question: string, pendingAddress?: string): 
   return false;
 }
 
+export interface TargetResolverDeps {
+  tokenResolver?: ITokenResolver;
+  addressClassifier?: AddressClassifier;
+}
+
 export class TargetResolver implements ITargetResolver {
   private readonly tokenResolver: ITokenResolver;
+  private readonly addressClassifier: AddressClassifier;
   private pendingByChatId = new Map<
     string,
     PendingResolutionContext & { timestamp: number }
   >();
 
-  constructor(deps?: ITokenResolver | { tokenResolver?: ITokenResolver }) {
+  constructor(deps?: ITokenResolver | TargetResolverDeps) {
     if (deps && 'tokenResolver' in deps) {
       this.tokenResolver = deps.tokenResolver ?? defaultTokenResolver;
+      this.addressClassifier = deps.addressClassifier ?? defaultAddressClassifier;
+    } else if (deps && 'classify' in deps) {
+      this.tokenResolver = defaultTokenResolver;
+      this.addressClassifier = deps as AddressClassifier;
     } else {
       this.tokenResolver = (deps as ITokenResolver) ?? defaultTokenResolver;
+      this.addressClassifier = defaultAddressClassifier;
     }
+  }
+
+  public getAddressClassifier(): AddressClassifier {
+    return this.addressClassifier;
   }
 
   public setPendingResolution(
@@ -407,7 +428,83 @@ export class TargetResolver implements ITargetResolver {
           this.clearPendingResolution(chatIdKey);
         }
 
-        // Deterministically classify the address on this chain (address + chain -> token info / address resolution)
+        const discovered = (pendingContext as any).discoveredClassifications?.[resolvedChainFromInput];
+        let addressType: AddressType | undefined = discovered;
+
+        if (!addressType || addressType === 'unknown') {
+          const classification = await this.addressClassifier.classify(
+            pendingAddress,
+            resolvedChainFromInput as SupportedChain
+          );
+          addressType = classification.type;
+        }
+
+        if (addressType === 'eoa') {
+          const walletTarget: InvestigationTarget = {
+            type: 'wallet',
+            address: pendingAddress.toLowerCase(),
+            chain: resolvedChainFromInput,
+            rawIdentifier: pendingAddress,
+            explicitChain: resolvedChainFromInput,
+          };
+          logger.info('Address classified via RPC as EOA/wallet', {
+            address: pendingAddress,
+            chain: resolvedChainFromInput,
+          });
+          return {
+            status: 'RESOLVED',
+            target: walletTarget,
+            source: 'explicit_message_with_chain',
+          };
+        }
+
+        if (addressType === 'contract') {
+          // Check token contract vs generic contract
+          const candidate: TokenCandidate = {
+            identifier: pendingAddress,
+            type: 'address',
+            detectedChain: resolvedChainFromInput,
+          };
+          const res = await this.resolveCandidate(candidate);
+
+          if (res.status === 'RESOLVED' && res.token) {
+            logger.info('Address resolved to verified token contract', {
+              address: pendingAddress,
+              token: res.token.symbol,
+              chain: res.token.chain,
+            });
+            return {
+              status: 'RESOLVED',
+              target: {
+                type: 'token',
+                token: res.token,
+                chain: res.token.chain,
+                rawIdentifier: pendingAddress,
+                explicitChain: resolvedChainFromInput,
+              },
+              source: 'explicit_message_with_chain',
+            };
+          }
+
+          const contractTarget: InvestigationTarget = {
+            type: 'contract',
+            address: pendingAddress.toLowerCase(),
+            chain: resolvedChainFromInput,
+            rawIdentifier: pendingAddress,
+            explicitChain: resolvedChainFromInput,
+          };
+          logger.info('Address classified via RPC as non-token smart contract', {
+            address: pendingAddress,
+            chain: resolvedChainFromInput,
+          });
+          return {
+            status: 'RESOLVED',
+            target: contractTarget,
+            source: 'explicit_message_with_chain',
+          };
+        }
+
+        // Fallback if addressType is unknown
         const candidate: TokenCandidate = {
           identifier: pendingAddress,
           type: 'address',
@@ -475,12 +572,14 @@ export class TargetResolver implements ITargetResolver {
       } else {
         // Unrecognized chain provided while awaiting chain clarification for address
         // The pending address MUST survive invalid clarification input
+        const discovered = (pendingContext as any).discoveredClassifications;
         if (chatIdKey) {
           this.setPendingResolution(chatIdKey, {
             type: 'address_chain_clarification',
             address: pendingAddress,
             candidateType: (pendingContext as any).candidateType ?? 'address',
             awaiting: 'chain',
+            discoveredClassifications: discovered,
           });
         }
 
@@ -492,8 +591,9 @@ export class TargetResolver implements ITargetResolver {
         return {
           status: 'AMBIGUOUS',
           candidateIdentifier: pendingAddress,
-          candidateType: 'wallet',
+          candidateType: (pendingContext as any).candidateType ?? 'address',
           availableChains: chains,
+          discoveredClassifications: discovered,
           clarificationMessage: TelegramMessages.invalidChainForAddress(pendingAddress, question, chains),
           source: 'explicit_message',
         };
@@ -601,50 +701,262 @@ export class TargetResolver implements ITargetResolver {
       };
     }
 
-    // Step 3: Precedence Rule 1 - Explicit wallet/address syntax (42 hex characters: 0x + 40 hex)
-    const walletMatch = this.detectWalletCandidate(question, targetChain);
-    if (walletMatch) {
-      if (walletMatch.chain) {
+    // Step 3: EVM Address Candidate (42 hex characters: 0x + 40 hex)
+    // Raw EVM address must NOT be assumed to be a wallet; it must be classified via blockchain state (eth_getCode).
+    const evmAddressMatch = question.match(/\b0x[a-fA-F0-9]{40}\b/i);
+    if (evmAddressMatch) {
+      const rawAddress = evmAddressMatch[0];
+      const normalizedAddress = rawAddress.toLowerCase();
+
+      // If chain is already known from conversation context:
+      // address -> known chain -> eth_getCode -> classify immediately
+      if (targetChain) {
         if (chatIdKey) {
           this.clearPendingResolution(chatIdKey);
         }
-        logger.info('Explicit wallet target resolved', { address: walletMatch.address, chain: walletMatch.chain });
+
+        const classification = await this.addressClassifier.classify(
+          normalizedAddress,
+          targetChain as SupportedChain
+        );
+
+        if (classification.type === 'eoa') {
+          const walletTarget: InvestigationTarget = {
+            type: 'wallet',
+            address: normalizedAddress,
+            chain: targetChain,
+            rawIdentifier: rawAddress,
+            explicitChain: explicitChainInfo?.chain || targetChain,
+          };
+          logger.info('EVM address classified via RPC as EOA/wallet on known chain', {
+            address: normalizedAddress,
+            chain: targetChain,
+          });
+          return {
+            status: 'RESOLVED',
+            target: walletTarget,
+            source: explicitChainInfo
+              ? 'explicit_message_with_chain'
+              : contextChain
+              ? 'existing_context'
+              : 'explicit_message',
+          };
+        }
+
+        if (classification.type === 'contract') {
+          // If CONTRACT: determine whether it is a verified/indexed TOKEN contract
+          const tokenRes = await this.resolveCandidate({
+            identifier: normalizedAddress,
+            type: 'address',
+            detectedChain: targetChain,
+          });
+
+          if (tokenRes.status === 'RESOLVED' && tokenRes.token) {
+            logger.info('EVM contract address verified as token contract', {
+              address: normalizedAddress,
+              token: tokenRes.token.symbol,
+              chain: tokenRes.token.chain,
+            });
+            return {
+              status: 'RESOLVED',
+              target: {
+                type: 'token',
+                token: tokenRes.token,
+                chain: tokenRes.token.chain,
+                rawIdentifier: rawAddress,
+                explicitChain: explicitChainInfo?.chain || targetChain,
+              },
+              source: explicitChainInfo
+                ? 'explicit_message_with_chain'
+                : contextChain
+                ? 'existing_context'
+                : 'explicit_message',
+            };
+          }
+
+          // Not a token -> generic CONTRACT TARGET
+          const contractTarget: InvestigationTarget = {
+            type: 'contract',
+            address: normalizedAddress,
+            chain: targetChain,
+            rawIdentifier: rawAddress,
+            explicitChain: explicitChainInfo?.chain || targetChain,
+          };
+          logger.info('EVM contract address classified as generic smart contract', {
+            address: normalizedAddress,
+            chain: targetChain,
+          });
+          return {
+            status: 'RESOLVED',
+            target: contractTarget,
+            source: explicitChainInfo
+              ? 'explicit_message_with_chain'
+              : contextChain
+              ? 'existing_context'
+              : 'explicit_message',
+          };
+        }
+
+        // classification.type === 'unknown' (e.g. RPC unavailable / offline fallback)
+        const tokenRes = await this.resolveCandidate({
+          identifier: normalizedAddress,
+          type: 'address',
+          detectedChain: targetChain,
+        });
+
+        if (tokenRes.status === 'RESOLVED' && tokenRes.token) {
+          return {
+            status: 'RESOLVED',
+            target: {
+              type: 'token',
+              token: tokenRes.token,
+              chain: tokenRes.token.chain,
+              rawIdentifier: rawAddress,
+              explicitChain: explicitChainInfo?.chain || targetChain,
+            },
+            source: explicitChainInfo
+              ? 'explicit_message_with_chain'
+              : contextChain
+              ? 'existing_context'
+              : 'explicit_message',
+          };
+        }
+
         return {
           status: 'RESOLVED',
-          target: walletMatch,
-          source: explicitChainInfo ? 'explicit_message_with_chain' : (contextChain ? 'existing_context' : 'explicit_message'),
+          target: {
+            type: 'wallet',
+            address: normalizedAddress,
+            chain: targetChain,
+            rawIdentifier: rawAddress,
+            explicitChain: explicitChainInfo?.chain || targetChain,
+          },
+          source: explicitChainInfo
+            ? 'explicit_message_with_chain'
+            : contextChain
+            ? 'existing_context'
+            : 'explicit_message',
         };
       }
 
-      // Chain cannot be determined from address alone: prompt user while preserving candidate
-      if (chatIdKey) {
-        this.setPendingResolution(chatIdKey, {
-          type: 'address_chain_clarification',
-          address: walletMatch.address,
-          candidateType: 'address',
-          awaiting: 'chain',
-        });
+      // If chain is NOT known:
+      // address -> check supported EVM chains
+      const multi = await this.addressClassifier.classifyMultiChain(normalizedAddress);
+
+      if (multi.status === 'single' && multi.chain && multi.type) {
+        if (chatIdKey) {
+          this.clearPendingResolution(chatIdKey);
+        }
+
+        if (multi.type === 'eoa') {
+          return {
+            status: 'RESOLVED',
+            target: {
+              type: 'wallet',
+              address: normalizedAddress,
+              chain: multi.chain,
+              rawIdentifier: rawAddress,
+              explicitChain: multi.chain,
+            },
+            source: 'explicit_message',
+          };
+        }
+
+        if (multi.type === 'contract') {
+          const tokenRes = await this.resolveCandidate({
+            identifier: normalizedAddress,
+            type: 'address',
+            detectedChain: multi.chain,
+          });
+
+          if (tokenRes.status === 'RESOLVED' && tokenRes.token) {
+            return {
+              status: 'RESOLVED',
+              target: {
+                type: 'token',
+                token: tokenRes.token,
+                chain: tokenRes.token.chain,
+                rawIdentifier: rawAddress,
+                explicitChain: multi.chain,
+              },
+              source: 'explicit_message',
+            };
+          }
+
+          return {
+            status: 'RESOLVED',
+            target: {
+              type: 'contract',
+              address: normalizedAddress,
+              chain: multi.chain,
+              rawIdentifier: rawAddress,
+              explicitChain: multi.chain,
+            },
+            source: 'explicit_message',
+          };
+        }
       }
-      const chains = getClarificationEvmChainNames();
-      logger.info('Address candidate detected without chain; requesting clarification', { address: walletMatch.address });
+
+      if (multi.status === 'ambiguous') {
+        if (chatIdKey) {
+          this.setPendingResolution(chatIdKey, {
+            type: 'address_chain_clarification',
+            address: normalizedAddress,
+            candidateType: 'wallet',
+            awaiting: 'chain',
+            discoveredClassifications: multi.classifications,
+          });
+        }
+        const chains = getClarificationEvmChainNames();
+        logger.info('Address candidate classified across multiple EVM chains; requesting chain clarification', {
+          address: normalizedAddress,
+          classifications: multi.classifications,
+        });
+        return {
+          status: 'AMBIGUOUS',
+          candidateIdentifier: normalizedAddress,
+          candidateType: 'wallet',
+          availableChains: chains,
+          discoveredClassifications: multi.classifications,
+          clarificationMessage: TelegramMessages.ambiguousAddress(normalizedAddress, chains),
+          source: 'explicit_message',
+        };
+      }
+
+      // multi.status === 'unresolved'
+      logger.info('Address could not be classified on any supported EVM network', {
+        address: normalizedAddress,
+      });
       return {
-        status: 'AMBIGUOUS',
-        candidateIdentifier: walletMatch.address,
-        candidateType: 'wallet',
-        availableChains: chains,
-        clarificationMessage: TelegramMessages.ambiguousAddress(walletMatch.address, chains),
+        status: 'UNRESOLVED',
+        candidateIdentifier: normalizedAddress,
+        candidateType: 'address',
+        clarificationMessage: TelegramMessages.unableToClassifyAddress(normalizedAddress),
         source: 'explicit_message',
       };
     }
 
-    // Malformed address checks (ignore 66-character tx hashes and explicit token contract syntax)
-    const isExplicitTokenSyntax = /(?:token|contract|\$)\s*0x[a-fA-F0-9]{40}\b/i.test(question);
+    // Step 3b: Solana wallet candidate (Base58 address accompanied by wallet keywords)
+    const solWallet = this.detectSolanaWalletCandidate(question, targetChain);
+    if (solWallet) {
+      if (chatIdKey) {
+        this.clearPendingResolution(chatIdKey);
+      }
+      logger.info('Explicit Solana wallet target resolved', { address: solWallet.address, chain: solWallet.chain });
+      return {
+        status: 'RESOLVED',
+        target: solWallet,
+        source: explicitChainInfo ? 'explicit_message_with_chain' : (contextChain ? 'existing_context' : 'explicit_message'),
+      };
+    }
+
+    // Malformed address checks (ignore 66-character tx hashes)
     const malformedEvm = question.match(/\b0x[a-zA-Z0-9]+\b/);
-    if (malformedEvm && malformedEvm[0].length !== 42 && malformedEvm[0].length !== 66 && !isExplicitTokenSyntax) {
+    if (malformedEvm && malformedEvm[0].length !== 42 && malformedEvm[0].length !== 66) {
       return {
         status: 'INVALID_ADDRESS',
         candidateIdentifier: malformedEvm[0],
-        candidateType: 'wallet',
+        candidateType: 'address',
         clarificationMessage: TelegramMessages.unresolvedToken(),
         source: 'explicit_message',
       };
@@ -918,25 +1230,10 @@ export class TargetResolver implements ITargetResolver {
   }
 
   /**
-   * Detects whether the query references a specific wallet address.
+   * Detects whether the query references a specific Solana wallet address.
    */
-  private detectWalletCandidate(text: string, targetChain?: string): WalletTarget | undefined {
+  private detectSolanaWalletCandidate(text: string, targetChain?: string): WalletTarget | undefined {
     const qLower = text.toLowerCase();
-    const isExplicitToken = /(?:token|contract|\$)\s*0x[a-fA-F0-9]{40}\b/i.test(text);
-
-    // 1. Check for EVM address (must not be an explicit token inquiry like "token 0x..." or "$0x...")
-    const evmMatch = text.match(/\b0x[a-fA-F0-9]{40}\b/i);
-    if (evmMatch && !isExplicitToken) {
-      const addr = evmMatch[0].toLowerCase();
-      return {
-        type: 'wallet',
-        address: addr,
-        chain: targetChain as any,
-        rawIdentifier: evmMatch[0],
-      };
-    }
-
-    // 2. Check for Solana base58 address accompanied by wallet keywords
     const solMatch = text.match(/\b[1-9A-HJ-NP-Za-km-z]{32,44}\b/);
     const hasWalletKeyword = WALLET_CONTEXT_KEYWORDS.some((kw) => qLower.includes(kw));
     if (solMatch && hasWalletKeyword && isSolanaAddress(solMatch[0])) {
@@ -949,6 +1246,13 @@ export class TargetResolver implements ITargetResolver {
     }
 
     return undefined;
+  }
+
+  /**
+   * Backward-compatible wallet candidate detector.
+   */
+  private detectWalletCandidate(text: string, targetChain?: string): WalletTarget | undefined {
+    return this.detectSolanaWalletCandidate(text, targetChain);
   }
 
   /**

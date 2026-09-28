@@ -50,6 +50,7 @@ export interface UnresolvedTargetResult {
   candidateIdentifier?: string;
   candidateType?: 'token' | 'wallet' | 'transaction' | 'chain' | 'contract' | 'address';
   clarificationMessage?: string;
+  discoveredClassifications?: Record<string, 'eoa' | 'contract' | 'unknown'>;
 }
 
 export type TargetResolutionResult = ResolvedTargetResult | UnresolvedTargetResult;
@@ -81,6 +82,7 @@ export type PendingResolutionContext =
       candidateType?: 'address' | 'wallet' | 'contract';
       awaiting?: 'chain';
       selectedChain?: string;
+      discoveredClassifications?: Record<string, 'eoa' | 'contract' | 'unknown'>;
     };
 
 export interface TargetResolverOptions {

@@ -123,17 +123,17 @@ describe('PROBE — Contract Correction & Intent Routing Regression Suite', () =
   // 2. VERIFIED TOKEN CONTRACT CORRECTION
   // =========================================================================
   describe('2. Verified Token Contract vs Non-Token Contract Resolution', () => {
-    it('re-resolves a verified token contract (PEPE) to a TOKEN target upon "that\'s a contract"', async () => {
+    it('directly resolves a verified token contract (PEPE) to a TOKEN target and preserves on "that\'s a contract"', async () => {
       const chatId = 9002;
 
-      // User provides PEPE contract with chain -> initially wallet
+      // User provides PEPE contract with chain -> directly classified as TOKEN via eth_getCode + Nansen
       const initial = await targetResolver.resolve({
         question: `${PEPE_ADDRESS} on ethereum`,
         chatId,
       });
-      expect(initial.target.type).toBe('wallet');
+      expect(initial.target.type).toBe('token');
 
-      // User corrects: "that's a contract"
+      // User says "that's a contract" -> remains/confirms verified token contract
       const corrected = await targetResolver.resolve({
         question: "that's a contract",
         chatId,

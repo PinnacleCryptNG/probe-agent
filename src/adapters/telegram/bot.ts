@@ -190,6 +190,7 @@ export class ProbeTelegramBot {
               address: resolution.candidateIdentifier,
               candidateType: (resolution.candidateType as any) ?? 'address',
               awaiting: 'chain',
+              discoveredClassifications: (resolution as any).discoveredClassifications,
             });
           } else {
             this.investigationManager.setPendingClarification(chatId, {

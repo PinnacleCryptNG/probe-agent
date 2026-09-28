@@ -104,6 +104,19 @@ export const TelegramMessages = {
     ].join('\n');
   },
 
+  unableToClassifyAddress(address: string): string {
+    const shortAddr = `${address.toLowerCase().slice(0, 6)}...${address.toLowerCase().slice(-4)}`;
+    return [
+      '🔎 Address detected',
+      '',
+      shortAddr,
+      '',
+      'Unable to classify this address on supported EVM networks.',
+      '',
+      'Please specify the chain (e.g. on Ethereum, on Base).',
+    ].join('\n');
+  },
+
   chainOnly(chainName: string): string {
     return [
       `Which token on ${chainName}?`,

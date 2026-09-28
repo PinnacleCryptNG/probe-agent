@@ -52,6 +52,7 @@ export type PendingClarification =
       candidateType: 'address' | 'wallet' | 'contract';
       awaiting: 'chain';
       selectedChain?: string;
+      discoveredClassifications?: Record<string, 'eoa' | 'contract' | 'unknown'>;
       timestamp: string;
     };
 
@@ -73,6 +74,7 @@ export class InvestigationManager {
           candidateType?: 'address' | 'wallet' | 'contract';
           awaiting?: 'chain';
           selectedChain?: string;
+          discoveredClassifications?: Record<string, 'eoa' | 'contract' | 'unknown'>;
         }
   ): void {
     const candidateType = (clarification as any).candidateType ?? 'address';
